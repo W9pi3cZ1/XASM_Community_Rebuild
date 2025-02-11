@@ -1,3 +1,4 @@
+#include "vm.h"
 #include "logger.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -34,84 +35,120 @@ void usleep(int usec) {
 }
 #endif
 
-typedef struct VirtMem {
-    int *mem;
-    size_t size;
-} VirtMem;
-
-VirtMem init_virt_mem(size_t size) {
-    size_t mem_size = 0;
-    LOG_DEBUG("Initializing virtual memory with size: %zu", size);
-    int *mem_vec;
-    if (size < 0xf00000) {
-        mem_size = size;
-        mem_vec = malloc(mem_size * sizeof(int));
-    } else {
-        mem_size = size;
-        mem_vec = malloc(mem_size * sizeof(int));
-        if (mem_vec == NULL) {
-            for (mem_size = 0xf00000; mem_size < size; mem_size += 0xf00000) {
-                if (mem_vec == NULL) {
-                    mem_vec = malloc(mem_size * sizeof(int));
-                } else {
-                    mem_vec = realloc(mem_vec, mem_size * sizeof(int));
-                }
-            }
-            mem_vec = realloc(mem_vec, (size * sizeof(int)));
-        }
-    }
-    if (mem_vec == NULL) {
-        LOG_ERROR("Failed to allocate memory", NULL);
-    }
-    VirtMem virt_mem = {
-        .mem = mem_vec,
-        .size = mem_size,
-    };
+VirtMem *init_virt_mem(size_t max_size) {
+    // size_t mem_size = 0;
+    // LOG_DEBUG("Initializing virtual memory with size: %zu", size);
+    // int *mem_vec;
+    // if (size < 0xf00000) {
+    //     mem_size = size;
+    //     mem_vec = malloc(mem_size * sizeof(int));
+    // } else {
+    //     mem_size = size;
+    //     mem_vec = malloc(mem_size * sizeof(int));
+    //     if (mem_vec == NULL) {
+    //         for (mem_size = 0xf00000; mem_size < size; mem_size += 0xf00000)
+    //         {
+    //             if (mem_vec == NULL) {
+    //                 mem_vec = malloc(mem_size * sizeof(int));
+    //             } else {
+    //                 mem_vec = realloc(mem_vec, mem_size * sizeof(int));
+    //             }
+    //         }
+    //         mem_vec = realloc(mem_vec, (size * sizeof(int)));
+    //     }
+    // }
+    // if (mem_vec == NULL) {
+    //     LOG_ERROR("Failed to allocate memory", NULL);
+    // }
+    // VirtMem virt_mem = {
+    //     .mem = mem_vec,
+    //     .size = mem_size,
+    // };
+    // return virt_mem;
+    VirtMem *virt_mem = malloc(sizeof(VirtMem));
+    virt_mem->chunk_size = 0xff;
+    virt_mem->max_size = max_size;
+    virt_mem->head = NULL;
     return virt_mem;
 }
 
-typedef enum ByteCode {
-    Add = 0x01,
-    Sub = 0x02,
-    XAdd = 0x03,
-    XSub = 0x04,
-    And = 0x11,
-    Or = 0x12,
-    Not = 0x13,
-    Mov = 0x21,
-    Copy = 0x22,
-    Goto = 0x23,
-    Geta = 0x24,
-    Gt = 0x25,
-    Lt = 0x26,
-    Eq = 0x27,
-    Lm = 0x28,
-    Rm = 0x29,
-    Exit = 0x2a,
-    Sto = 0xff,
-    Putc = 0x31,
-    Putn = 0x32,
-    Puth = 0x33,
-    Getc = 0x34,
-    Getn = 0x35,
-    Geth = 0x36,
-    BAnd = 0x41,
-    BOr = 0x42,
-    XOr = 0x43,
-    BNot = 0x44,
-    Shl = 0x45,
-    Shr = 0x46,
-    Void = 0x00,
-} ByteCode;
+MemChunk *find_chunk(VirtMem *virt_mem, size_t addr) {
+    MemChunk *chunk = virt_mem->head;
+    if (addr > virt_mem->max_size) {
+        LOG_FATAL("Address %zx is out of range.", addr);
+        exit(-1);
+        return NULL;
+    }
+    MemChunk *prev_chunk = NULL;
+    while (chunk != NULL) {
+        if (addr >= chunk->start_addr && addr <= chunk->end_addr) {
+            // Optimized multiple access to chunks
+            if (prev_chunk != NULL) {
+                prev_chunk->next_chunk = chunk->next_chunk;
+                chunk->next_chunk = virt_mem->head;
+                virt_mem->head = chunk;
+            }
+            return chunk;
+        }
+        prev_chunk = chunk;
+        chunk = chunk->next_chunk;
+    }
+    return NULL;
+}
 
-typedef enum State {
-    Run,
-    Halt,
-} State;
+VirtMem *alloc_chunk(VirtMem *virt_mem, size_t addr) {
+    size_t start_addr = addr / virt_mem->chunk_size * virt_mem->chunk_size;
+    size_t end_addr = start_addr + virt_mem->chunk_size - 1;
+    if (end_addr > virt_mem->max_size) {
+        LOG_FATAL("Address %zx is out of range.", addr);
+        exit(-1);
+        return virt_mem; // Never return
+    }
+    MemChunk *chunk = malloc(sizeof(MemChunk));
+    chunk->start_addr = start_addr;
+    chunk->end_addr = end_addr;
+    chunk->mem = malloc(virt_mem->chunk_size * sizeof(int));
+    chunk->next_chunk = virt_mem->head;
+    virt_mem->head = chunk;
+    return virt_mem;
+}
 
-#define ADDR_SIZE 4
+MemChunk *get_chunk(VirtMem *virt_mem, size_t addr) {
+    MemChunk *chunk = find_chunk(virt_mem, addr);
+    if (chunk == NULL) {
+        // Allocate chunk
+        LOG_DEBUG("Allocating chunk for address %zx", addr);
+        // Alloc a chunk by addr and insert it into the head.
+        virt_mem = alloc_chunk(virt_mem, addr);
+        chunk = virt_mem->head;
+    }
+    return chunk;
+}
 
-size_t get_addr(int *mem_ptr) {
+int *read_virtmem(VirtMem *virt_mem, size_t addr) {
+    MemChunk *chunk = get_chunk(virt_mem, addr);
+    return (chunk->mem) + (addr - chunk->start_addr);
+}
+
+void virtmem_cpy(VirtMem *virt_mem, int *dest, size_t src_addr, size_t n) {
+    LOG_DEBUG("Calling virtmem_cpy", NULL);
+    MemChunk *chunk = get_chunk(virt_mem, src_addr);
+    size_t chunk_offset = src_addr - chunk->start_addr;
+    for (size_t idx = 0; idx < n; idx++) {
+        // Overflow chunk
+        if (idx + chunk_offset > chunk->end_addr - chunk->start_addr) {
+            LOG_DEBUG("Overflow chunk", NULL);
+            chunk = get_chunk(virt_mem, chunk->end_addr + 1);
+            // Recalculate chunk_offset
+            chunk_offset = -idx;
+        }
+        LOG_DEBUG("Copying (chunk[%02x])%02x to dest[%02x]", chunk_offset + idx,
+                  chunk->mem[chunk_offset + idx], idx);
+        dest[idx] = chunk->mem[chunk_offset + idx];
+    }
+};
+
+size_t merge_addr(int *mem_ptr) {
     // LOG_DEBUG("Bytes[0]:%02x", mem_ptr[0]);
     // LOG_DEBUG("Bytes[3]:%02x", mem_ptr[3]);
     size_t addr = (mem_ptr[0] << 24) + (mem_ptr[1] << 16) + (mem_ptr[2] << 8) +
@@ -120,13 +157,13 @@ size_t get_addr(int *mem_ptr) {
     return addr;
 }
 
-void log_mem(VirtMem virt_mem, size_t begin, size_t end, LogLevel lvl) {
+void log_mem(VirtMem *virt_mem, size_t begin, size_t end, LogLevel lvl) {
     int idx;
-    for (idx = begin; idx < end && idx < virt_mem.size; idx++) {
+    for (idx = begin; idx < end && idx < virt_mem->max_size; idx++) {
         if (idx % 0x10 == 0) {
             logger_feat(1, 0, lvl, "0x%08zx|", idx);
         }
-        logger_feat(1, 1, lvl, "%02x ", virt_mem.mem[idx]);
+        logger_feat(1, 1, lvl, "%02x ", *read_virtmem(virt_mem, idx));
         if ((idx + 1) % 0x10 == 0) {
             logger_feat(1, 1, lvl, "\n", NULL);
         }
@@ -134,15 +171,16 @@ void log_mem(VirtMem virt_mem, size_t begin, size_t end, LogLevel lvl) {
     logger_feat(1, 1, lvl, "\n", NULL);
 }
 
-void execute_code(VirtMem virt_mem, size_t cpu_clock, size_t src_size) {
+void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
     size_t byte_idx = 0;
     State state = Run;
     LOG_DEBUG("CPU Clock:%zu", cpu_clock);
     size_t microsec_per_cmd = cpu_clock == 0 ? 0 : 1000000 / cpu_clock;
     int data[16];
+    int *mem_ref[16]; // Memory reference
     size_t addr[4];
     size_t cmd_cnt = 0;
-    while (byte_idx < virt_mem.size && state != Halt) {
+    while (byte_idx < virt_mem->max_size && state != Halt) {
         ++cmd_cnt;
         if (cmd_cnt % 100 == 0) {
             log_mem(virt_mem, 0, src_size, DEBUG);
@@ -151,116 +189,146 @@ void execute_code(VirtMem virt_mem, size_t cpu_clock, size_t src_size) {
         if (cpu_clock != 0) {
             usleep(microsec_per_cmd);
         };
-        memcpy(data, virt_mem.mem + byte_idx, 16 * sizeof(int));
-        addr[0] = get_addr(&data[1]);
-        addr[1] = get_addr(&data[5]);
-        addr[2] = get_addr(&data[9]);
-        addr[3] = get_addr(&data[13]);
+        // memcpy(data, virt_mem.mem + byte_idx, 16 * sizeof(int));
+        virtmem_cpy(virt_mem, data, byte_idx, 16);
+        addr[0] = merge_addr(&data[1]);
+        addr[1] = merge_addr(&data[5]);
+        addr[2] = merge_addr(&data[9]);
+        addr[3] = merge_addr(&data[13]);
         switch (data[0]) {
         case Add:
             LOG_DEBUG("Add", NULL);
-            virt_mem.mem[addr[0]] += virt_mem.mem[addr[1]];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], virt_mem.mem[addr[0]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] += *mem_ref[1];
+            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
             byte_idx += ADDR_SIZE * 2;
             break;
         case Sub:
             LOG_DEBUG("Sub", NULL);
-            virt_mem.mem[addr[0]] -= virt_mem.mem[addr[1]];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], virt_mem.mem[addr[0]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] -= *mem_ref[1];
+            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
             byte_idx += ADDR_SIZE * 2;
             break;
         case XAdd:
             LOG_DEBUG("XAdd", NULL);
-            virt_mem.mem[addr[0]] *= virt_mem.mem[addr[1]];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], virt_mem.mem[addr[0]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] *= *mem_ref[1];
+            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
             byte_idx += ADDR_SIZE * 2;
             break;
         case XSub:
             LOG_DEBUG("XSub", NULL);
-            virt_mem.mem[addr[0]] /= virt_mem.mem[addr[1]];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], virt_mem.mem[addr[0]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] /= *mem_ref[1];
+            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
             byte_idx += ADDR_SIZE * 2;
             break;
         case And:
             LOG_DEBUG("And", NULL);
-            virt_mem.mem[addr[2]] =
-                virt_mem.mem[addr[0]] && virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            mem_ref[2] = read_virtmem(virt_mem, addr[2]);
+            *mem_ref[2] = *mem_ref[0] && *mem_ref[1];
             byte_idx += ADDR_SIZE * 3;
             break;
         case Or:
             LOG_DEBUG("Or", NULL);
-            virt_mem.mem[addr[2]] =
-                virt_mem.mem[addr[0]] || virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            mem_ref[2] = read_virtmem(virt_mem, addr[2]);
+            *mem_ref[2] = *mem_ref[0] || *mem_ref[1];
             byte_idx += ADDR_SIZE * 3;
             break;
         case Not:
             LOG_DEBUG("Not", NULL);
-            virt_mem.mem[addr[1]] = !virt_mem.mem[addr[0]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[1] = !*mem_ref[0];
             byte_idx += ADDR_SIZE * 2;
             break;
         case Mov:
             LOG_DEBUG("Mov", NULL);
-            virt_mem.mem[addr[0]] = addr[1];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            *mem_ref[0] = addr[1];
             byte_idx += ADDR_SIZE * 2;
             break;
         case Copy:
             LOG_DEBUG("Copy", NULL);
-            virt_mem.mem[addr[0]] = virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] = *mem_ref[1];
             byte_idx += ADDR_SIZE * 2;
             break;
         case Goto:
             LOG_DEBUG("Goto", NULL);
-            byte_idx = virt_mem.mem[addr[0]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            byte_idx = *mem_ref[0];
             byte_idx--;
             break;
         case Geta:
             LOG_DEBUG("Geta", NULL);
             byte_idx += ADDR_SIZE;
-            virt_mem.mem[addr[0]] = byte_idx + 1;
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], virt_mem.mem[addr[0]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            *mem_ref[0] = byte_idx + 1;
+            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
             break;
         case Gt:
             LOG_DEBUG("Gt", NULL);
-            if (virt_mem.mem[addr[0]] > virt_mem.mem[addr[1]]) {
-                byte_idx = virt_mem.mem[addr[2]] - 1;
-                LOG_DEBUG("%08x > %08x = True", virt_mem.mem[addr[0]],
-                          virt_mem.mem[addr[1]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            mem_ref[2] = read_virtmem(virt_mem, addr[2]);
+            if (*mem_ref[0] > *mem_ref[1]) {
+                byte_idx = *mem_ref[2] - 1;
+                LOG_DEBUG("%08x > %08x = True", *mem_ref[0], *mem_ref[1]);
             } else {
                 byte_idx += ADDR_SIZE * 3;
             }
             break;
         case Lt:
             LOG_DEBUG("Lt", NULL);
-            if (virt_mem.mem[addr[0]] < virt_mem.mem[addr[1]]) {
-                byte_idx = virt_mem.mem[addr[2]] - 1;
-                LOG_DEBUG("%08x < %08x = True", virt_mem.mem[addr[0]],
-                          virt_mem.mem[addr[1]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            mem_ref[2] = read_virtmem(virt_mem, addr[2]);
+            if (*mem_ref[0] < *mem_ref[1]) {
+                byte_idx = *mem_ref[2] - 1;
+                LOG_DEBUG("%08x < %08x = True", *mem_ref[0], *mem_ref[1]);
             } else {
                 byte_idx += ADDR_SIZE * 3;
             }
             break;
         case Eq:
             LOG_DEBUG("Eq", NULL);
-            if (virt_mem.mem[addr[0]] == virt_mem.mem[addr[1]]) {
-                byte_idx = virt_mem.mem[addr[2]] - 1;
-                LOG_DEBUG("%08x == %08x = True", virt_mem.mem[addr[0]],
-                          virt_mem.mem[addr[1]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            mem_ref[2] = read_virtmem(virt_mem, addr[2]);
+            if (*mem_ref[0] == *mem_ref[1]) {
+                byte_idx = *mem_ref[2] - 1;
+                LOG_DEBUG("%08x == %08x = True", *mem_ref[0], *mem_ref[1]);
             } else {
                 byte_idx += ADDR_SIZE * 3;
             }
             break;
         case Lm:
             LOG_DEBUG("Lm", NULL);
-            virt_mem.mem[virt_mem.mem[addr[0]] - virt_mem.mem[addr[1]]] =
-                virt_mem.mem[addr[0]];
-            virt_mem.mem[addr[0]] = Void;
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            mem_ref[2] = read_virtmem(virt_mem, *mem_ref[0] - *mem_ref[1]);
+            *mem_ref[2] = *mem_ref[0];
+            *mem_ref[0] = Void;
             byte_idx += ADDR_SIZE * 2;
             break;
         case Rm:
             LOG_DEBUG("Rm", NULL);
-            virt_mem.mem[virt_mem.mem[addr[0]] + virt_mem.mem[addr[1]]] =
-                virt_mem.mem[addr[0]];
-            virt_mem.mem[addr[0]] = Void;
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            mem_ref[2] = read_virtmem(virt_mem, *mem_ref[0] + *mem_ref[1]);
+            *mem_ref[2] = *mem_ref[0];
+            *mem_ref[0] = Void;
             byte_idx += ADDR_SIZE * 2;
             break;
         case Exit:
@@ -270,75 +338,87 @@ void execute_code(VirtMem virt_mem, size_t cpu_clock, size_t src_size) {
             break;
         case Sto:
             LOG_DEBUG("Sto", NULL);
-            while (virt_mem.mem[++byte_idx] != Sto)
+            while (*read_virtmem(virt_mem, ++byte_idx) != Sto)
                 ;
             break;
         case Putc:
             LOG_DEBUG("Putc", NULL);
-            putchar(virt_mem.mem[virt_mem.mem[addr[0]]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, *mem_ref[0]);
+            putchar(*mem_ref[1]);
             byte_idx += ADDR_SIZE;
             break;
         case Putn:
             LOG_DEBUG("Putn", NULL);
-            printf("%d", virt_mem.mem[virt_mem.mem[addr[0]]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, *mem_ref[0]);
+            printf("%d", *mem_ref[1]);
             byte_idx += ADDR_SIZE;
             break;
         case Puth:
             LOG_DEBUG("Puth", NULL);
-            printf("%x", virt_mem.mem[virt_mem.mem[addr[0]]]);
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, *mem_ref[0]);
+            printf("%x", *mem_ref[1]);
             byte_idx += ADDR_SIZE;
             break;
         case Getc:
             LOG_DEBUG("Getc", NULL);
-            virt_mem.mem[addr[0]] = getch();
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            *mem_ref[0] = getch();
             byte_idx += ADDR_SIZE;
             break;
         case Getn:
             LOG_DEBUG("Getn", NULL);
-            data[15] = 0;
-            scanf("%d", &data[15]);
-            virt_mem.mem[addr[0]] = data[15];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            scanf("%d", mem_ref[0]);
             byte_idx += ADDR_SIZE;
             break;
         case Geth:
             LOG_DEBUG("Geth", NULL);
-            data[15] = 0;
-            scanf("%x", &data[15]);
-            virt_mem.mem[addr[0]] = data[15];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            scanf("%x", mem_ref[0]);
             byte_idx += ADDR_SIZE;
             break;
-            // TODO: ADD MORE
         case BAnd:
             LOG_DEBUG("BAnd", NULL);
-            virt_mem.mem[addr[0]] =
-                virt_mem.mem[addr[0]] & virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] = *mem_ref[0] & *mem_ref[1];
             byte_idx += ADDR_SIZE * 2;
             break;
         case BOr:
             LOG_DEBUG("BOr", NULL);
-            virt_mem.mem[addr[0]] =
-                virt_mem.mem[addr[0]] | virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] = *mem_ref[0] | *mem_ref[1];
             byte_idx += ADDR_SIZE * 2;
             break;
         case XOr:
             LOG_DEBUG("XOr", NULL);
-            virt_mem.mem[addr[0]] =
-                virt_mem.mem[addr[0]] ^ virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] = *mem_ref[0] ^ *mem_ref[1];
             byte_idx += ADDR_SIZE * 2;
             break;
         case BNot:
             LOG_DEBUG("BNot", NULL);
-            virt_mem.mem[addr[0]] = ~virt_mem.mem[addr[0]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            *mem_ref[0] = ~*mem_ref[0];
             byte_idx += ADDR_SIZE;
             break;
         case Shl:
             LOG_DEBUG("Shl", NULL);
-            virt_mem.mem[addr[0]] <<= virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] <<= *mem_ref[1];
             byte_idx += ADDR_SIZE * 2;
             break;
         case Shr:
             LOG_DEBUG("Shr", NULL);
-            virt_mem.mem[addr[0]] >>= virt_mem.mem[addr[1]];
+            mem_ref[0] = read_virtmem(virt_mem, addr[0]);
+            mem_ref[1] = read_virtmem(virt_mem, addr[1]);
+            *mem_ref[0] >>= *mem_ref[1];
             byte_idx += ADDR_SIZE * 2;
             break;
         case Void:
@@ -354,19 +434,22 @@ void execute_code(VirtMem virt_mem, size_t cpu_clock, size_t src_size) {
     }
 }
 
-void run_file(VirtMem virt_mem, FILE *src_file, size_t cpu_clock) {
+void run_file(VirtMem *virt_mem, FILE *src_file, size_t cpu_clock) {
     size_t byte_idx;
-    for (byte_idx = 0; byte_idx < virt_mem.size &&
-                       (virt_mem.mem[byte_idx] = fgetc(src_file)) != EOF;
+    for (byte_idx = 0;
+         byte_idx < virt_mem->max_size &&
+         (*read_virtmem(virt_mem, byte_idx) = fgetc(src_file)) != EOF;
          byte_idx++)
         ;
 
     size_t src_size;
-    LOG_INFO("FirstByte: %02x", virt_mem.mem[0]);
-    LOG_INFO("LastByte: %02x", virt_mem.mem[byte_idx]);
-    if (virt_mem.mem[byte_idx] == EOF) {
+    int *first_byte = read_virtmem(virt_mem, 0);
+    int *last_byte = read_virtmem(virt_mem, byte_idx);
+    LOG_INFO("FirstByte: %02x", *first_byte);
+    LOG_INFO("LastByte: %02x", *last_byte);
+    if (*last_byte == EOF) {
         src_size = byte_idx;
-        virt_mem.mem[byte_idx] = Void;
+        *last_byte = Void;
     } else {
         LOG_FATAL("Memory not enough to load the source file", NULL);
     }

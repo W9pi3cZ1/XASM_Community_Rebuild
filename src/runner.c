@@ -118,7 +118,7 @@ int main(int argc, char **argv) {
         if (mem_size == 0) {
             mem_size = 0xffff;
         }
-        VirtMem virt_mem = init_virt_mem(mem_size);
+        VirtMem *virt_mem = init_virt_mem(mem_size);
         run_file(virt_mem, input_file, cpu_clock);
     }
     return 0;
