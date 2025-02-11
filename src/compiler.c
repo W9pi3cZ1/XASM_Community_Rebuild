@@ -1,44 +1,46 @@
 #include "./include/argparse.c"
 #include "./include/compile.c"
+#include <stdlib.h>
 
 FILE *input_file;
 FILE *output_file;
 
+FILE *open_file(char *file_path, const char *modes) {
+    FILE *file = fopen(file_path, modes);
+    if (file == NULL) {
+        LOG_FATAL("Cannot open file `%s`", file_path);
+        exit(1);
+    } else {
+        LOG_INFO("Openned File `%s` ", file_path);
+    }
+    return file;
+}
+
 void enter_input(char **argv) {
     char *input_path = argv[0];
-    input_file = fopen(input_path, "r");
-    LOG_DEBUG("Opening File `%s`", input_path);
-    if (input_file == NULL) {
-        LOG_FATAL("Cannot open input file `%s`", input_path);
-    } else {
-        LOG_DEBUG("Openned File `%s` ", input_path);
-    }
+    LOG_INFO("Opening File `%s`", input_path);
+    input_file = open_file(input_path, "r");
 }
 
 void enter_output(char **argv) {
     char *output_path = argv[0];
-    output_file = fopen(output_path, "w");
-    LOG_DEBUG("Opening File `%s`", output_path);
-    if (input_file == NULL) {
-        LOG_FATAL("Cannot open output file `%s`", output_path);
-    } else {
-        LOG_DEBUG("Openned File `%s` ", output_path);
-    }
+    LOG_INFO("Opening File `%s`", output_path);
+    output_file = open_file(output_path, "w");
 }
 
-static char *input_aliases[] = {"-i", "--input"};
+const char *input_aliases[] = {"-i", "--input"};
 
 Option input_opt = {
-    .alias_cnt = 2,
-    .aliases = input_aliases,
-    .argc = 1,
-    .callback = enter_input,
     .name = "input",
     .description = "Path to the input file",
     .usage = "<input_file>",
+    .argc = 1,
+    .aliases = input_aliases,
+    .alias_cnt = 2,
+    .callback = enter_input,
 };
 
-static char *output_aliases[] = {"-o", "--output"};
+const char *output_aliases[] = {"-o", "--output"};
 
 Option output_opt = {
     .alias_cnt = 2,
@@ -50,7 +52,7 @@ Option output_opt = {
     .usage = "<output_file>",
 };
 
-static char *help_aliases[] = {"-h", "--help"};
+const char *help_aliases[] = {"-h", "--help"};
 
 Option help_opt = {
     .alias_cnt = 2,
@@ -61,14 +63,27 @@ Option help_opt = {
     .usage = "\t\t", // Align
 };
 
-static Option *opts[] = {&input_opt, &output_opt, &help_opt};
+const char *log_lvl_aliases[] = {"-L", "--log-level"};
+
+Option log_lvl_opt = {
+    .alias_cnt = 2,
+    .aliases = log_lvl_aliases,
+    .argc = 1,
+    .callback = set_log_lvl,
+    .name = "log-level",
+    .description = "Sets the log level (e.g. 0=INFO, 1=WARN, 2=ERROR...)",
+    .help = "0=INFO, 1=WARN, 2=ERROR, 3=FATAL, 4=DEBUG",
+    .usage = "<log_level>",
+};
+
+static Option *opts[] = {&input_opt, &output_opt, &help_opt, &log_lvl_opt};
 
 Application app = {
     .name = "XASM Community Compiler",
     .description = "A compiler for the XASM language",
     .usage = "[<options> ...]",
     .version = "a0.0.1",
-    .opt_cnt = 3,
+    .opt_cnt = 4,
     .opts = opts,
 };
 
@@ -84,6 +99,15 @@ Application init_app(int argc, char **argv) {
 int main(int argc, char **argv) {
     Application compiler = init_app(argc, argv);
     parse_args(&compiler);
+    if (input_file == NULL) {
+        LOG_ERROR("Input file was not entered.", NULL);
+        exit(1);
+    }
+    if (output_file == NULL) {
+        LOG_WARN("Output file was not entered, using default file `out.bin`.",
+                 NULL);
+        output_file = open_file("out.bin", "w");
+    }
     compile(input_file, output_file);
     return 0;
 }

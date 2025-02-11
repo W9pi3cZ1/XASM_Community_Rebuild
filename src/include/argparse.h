@@ -1,13 +1,12 @@
 #include "./logger.h"
 #include <stddef.h>
-#include <string.h>
 
 typedef struct Option {
     char *name;
     char *description;
     char *usage;
     size_t argc;
-    char **aliases;
+    const char **aliases;
     size_t alias_cnt;
     char *help; // For more help message
     void (*callback)(char **argv);
