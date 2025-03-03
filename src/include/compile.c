@@ -4,19 +4,24 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-CodeUnit read_string(FILE *input, const char end) {
+CodeUnit read_string_unit(FILE *input, const char end) {
     CodeUnit unit;
     char *string = NULL;
     size_t string_len = 0;
+    int cur_byte;
     while (1) {
         ++string_len;
         string = realloc(string, sizeof(char) * string_len);
-        string[string_len - 1] = getc(input);
-        switch (string[string_len - 1]) {
+        cur_byte = getc(input);
+        string[string_len - 1] = cur_byte;
+        switch (cur_byte) {
         case '\\':
-            string[string_len - 1] = getc(input);
-            switch (string[string_len - 1]) {
+            cur_byte = getc(input);
+            string[string_len - 1] = cur_byte;
+            switch (cur_byte) {
             case EOF:
                 logger(DEBUG, "FileEOF");
                 unit.type = FileEOF;
@@ -59,20 +64,27 @@ CodeUnit read_string(FILE *input, const char end) {
 CodeUnit read_normal_unit(FILE *input) {
     CodeUnit unit;
     char *unit_data = NULL;
+    int cur_byte;
     int unit_len = 0;
-    while (1) {
+    int is_continue = 1;
+    while (is_continue) {
         ++unit_len;
         unit_data = realloc(unit_data, sizeof(char) * unit_len);
-        unit_data[unit_len - 1] = getc(input);
-        if (unit_data[unit_len - 1] == EOF && unit_len == 1) {
+        cur_byte = getc(input);
+        unit_data[unit_len - 1] = cur_byte;
+        if (cur_byte == EOF && unit_len == 1) {
             logger(DEBUG, "FileEOF");
             unit.type = FileEOF;
             return unit;
         }
-        if (unit_data[unit_len - 1] == ' ' || unit_data[unit_len - 1] == '\n' ||
-            unit_data[unit_len - 1] == '\t' ||
-            unit_data[unit_len - 1] == '\r' || unit_data[unit_len - 1] == EOF) {
+        switch (cur_byte) {
+        case ' ':
+        case '\n':
+        case '\t':
+        case '\r':
+        case EOF:
             unit_data[unit_len - 1] = '\0';
+            is_continue = 0;
             break;
         }
     }
@@ -83,88 +95,136 @@ CodeUnit read_normal_unit(FILE *input) {
     return unit;
 }
 
-CodeUnit get_unit(FILE *input) {
-    CodeUnit unit;
-    char begin[2];
-
-    if (fscanf(input, "%1s", begin) == EOF) {
-        unit.type = FileEOF;
-        logger(DEBUG, "FileEOF");
-        return unit;
-    }
-
-    LOG_DEBUG("Begin: %s", begin);
-
-    switch (begin[0]) {
+CodeUnit get_unit_type(CodeUnit unit, int *buf, int *offset_ref) {
+    switch (buf[0]) {
     case '"':
-        unit.type = String;
-        unit = read_string(input, '"');
-        break;
     case '\'':
+        *offset_ref += 1; // Skip
         unit.type = String;
-        unit = read_string(input, '\'');
         break;
     case '#':
+        *offset_ref += 1; // Skip
         unit.type = Comment;
         break;
     case '/':
-        begin[1] = getc(input);
-        if (begin[1] == '/') {
+        if (buf[1] == '/') {
+            *offset_ref += 2; // Skip
             unit.type = Comment;
             break;
-        } else if (begin[1] == EOF) {
-            unit.type = FileEOF;
-            logger(DEBUG, "FileEOF");
-            return unit;
-        } else if (begin[1] == '*') {
+        } else if (buf[1] == '*') {
+            *offset_ref += 2; // Skip
             logger(DEBUG, "BlockComment Begin");
             unit.type = BlockComment;
         } else {
             unit.type = Invalid;
         }
         break;
-
     case '-':
-        begin[1] = getc(input);
-        if (begin[1] == '-') {
+        if (buf[1] == '-') {
+            *offset_ref += 2; // Skip
             unit.type = Comment;
             break;
-        } else if (begin[1] == EOF) {
-            unit.type = FileEOF;
-            logger(DEBUG, "FileEOF");
-            return unit;
         } else {
             unit.type = Invalid;
         }
-        break;
-
     default:
         unit.type = Normal;
+        break;
+    }
+    return unit;
+}
+
+CodeUnit skip_unit(CodeUnit unit, FILE *input) {
+    int buf[1]; // For EOF support
+    // The whole unit is invalid
+    do {
+        buf[0] = getc(input);
+    } while (buf[0] != ' ' && buf[0] != '\n' && buf[0] != '\t' &&
+             buf[0] != '\r' && buf[0] != EOF);
+    if (buf[0] == EOF) {
+        fseek(input, -1, SEEK_CUR);
+    }
+    return unit;
+}
+
+int skip_whitespace(FILE *input) {
+    int tmp;
+    tmp = getc(input);
+    while (tmp == ' ' || tmp == '\n' || tmp == '\t' || tmp == '\r') {
+        tmp = getc(input);
+    };
+    fseek(input, -1, SEEK_CUR);
+    return tmp;
+}
+
+int buf_read(int *buf, const int BUFFER_SIZE, FILE *input) {
+    int offset = 0;
+    for (offset = 0; offset < BUFFER_SIZE; offset++) {
+        buf[offset] = getc(input);
+        if (buf[offset] == EOF) {
+            logger(DEBUG, "FileEOF at %d", offset);
+            break;
+        }
+    }
+    fseek(input, -offset, SEEK_CUR); // Make file pointer idle
+    return offset;
+}
+
+CodeUnit get_unit(FILE *input) {
+    CodeUnit unit;
+    const int BUFFER_SIZE = 32;
+    int buf[BUFFER_SIZE];
+    int offset = 0;
+    int *offset_ref = malloc(sizeof(int)); // For offset file pointer
+    *offset_ref = offset;
+
+    // Skip whitespace characters ahead
+    buf[0] = skip_whitespace(input);
+    if (buf[0] == EOF) {
+        logger(DEBUG, "FileEOF");
+        unit.type = FileEOF;
+        return unit;
     }
 
+    // Read non-empty bytes
+    buf_read(buf, BUFFER_SIZE, input);
+
+    // Get the unit type
+    *offset_ref = 0;
+    unit = get_unit_type(unit, buf, offset_ref);
+    offset = *offset_ref;
+    LOG_DEBUG("Offset: %d", offset);
+    fseek(input, offset, SEEK_CUR);
+    free(offset_ref);
+
+    // Read the unit data, or skip this unit
     switch (unit.type) {
-    case Comment:
-        fscanf(input, "%*[^\n]\n");
-        logger(DEBUG, "Comment");
+    case FileEOF:
+        break;
+    case Invalid:
+        unit = skip_unit(unit, input);
+        logger(DEBUG, "Invalid");
+        break;
+    case String:
+        LOG_DEBUG("String buf[0]: %c", buf[0]);
+        unit = read_string_unit(input, buf[0]);
         break;
     case Normal:
-        fseek(input, -1, SEEK_CUR);
         unit = read_normal_unit(input);
-        logger(DEBUG, "Normal");
+        break;
+    case Comment:
+        LOG_DEBUG("Skipped comment", NULL);
+        while (buf[0] != '\n') {
+            buf[0] = getc(input);
+        }
         break;
     case BlockComment:
-        logger(DEBUG, "BlockComment");
-        while ((begin[0] = getc(input)) != EOF) {
-            if (begin[0] == '*' && (begin[1] = getc(input)) == '/') {
-                break;
-            }
+        while (buf[0] != '*' || buf[1] != '/') {
+            // Move window
+            buf_read(buf, BUFFER_SIZE, input);
+            fseek(input, 1, SEEK_CUR);
         }
-        logger(DEBUG, "BlockComment End");
-        break;
-    default:
-        break;
     }
-
     return unit;
 }
 
@@ -214,9 +274,11 @@ void compile(FILE *input, FILE *output) {
                 LOG_ERROR("Unknown code: %s", unit.data);
                 exit(3);
             }
+            free(unit.data);
             break;
         case String:
             fputs(unit.data, output);
+            free(unit.data);
             break;
         case Invalid:
             LOG_ERROR("Invalid code: %s", unit.data);

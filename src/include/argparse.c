@@ -47,6 +47,7 @@ int parse_arg(Application *app, size_t *arg_idx) {
                     }
                     LOG_INFO("Calling callback for option `%s`", opt->name);
                     opt->callback(opt_argv);
+                    free(opt_argv);
                 } else {
                     LOG_ERROR("Missing %d argument(s) for option `%s`",
                               opt->argc - app->argc + *arg_idx + 1, opt->name);

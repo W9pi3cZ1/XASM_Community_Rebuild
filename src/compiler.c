@@ -82,7 +82,7 @@ Application app = {
     .name = "XASM Community Compiler",
     .description = "A compiler for the XASM language",
     .usage = "[<options> ...]",
-    .version = "a0.0.1",
+    .version = "a0.0.4",
     .opt_cnt = 4,
     .opts = opts,
 };

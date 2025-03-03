@@ -94,7 +94,7 @@ Application app = {
     .name = "XASM Community Runner",
     .description = "A Runner for the XASM language",
     .usage = "[<options> ...]",
-    .version = "a0.0.1",
+    .version = "a0.0.4",
     .opt_cnt = 5,
     .opts = opts,
 };
