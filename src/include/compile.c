@@ -298,8 +298,8 @@ AddrNode *find_addr(AddrList *addr_list, char *label) {
     return NULL;
 }
 
-char *addr_to_bytes(AddrNode *addr_node) {
-    char *addr_bytes = malloc(4 * sizeof(char));
+unsigned char *addr_to_bytes(AddrNode *addr_node) {
+    unsigned char *addr_bytes = malloc(4 * sizeof(unsigned char));
     size_t addr = addr_node->addr;
     for (int i = 0; i < 4; i++) {
         addr_bytes[4 - i - 1] = (addr >> (8 * i)) & 0xff;
@@ -315,7 +315,7 @@ void compile(FILE *input, FILE *output) {
     addr_list->head = NULL;
     size_t cur_addr = 0;
     AddrNode *cur_node = NULL;
-    char *addr_bytes;
+    unsigned char *addr_bytes;
     // 1 Loop for append addrs to addr_list
     LOG_DEBUG("Loop 1 Started", NULL);
     while (!eof_sig) {
@@ -329,7 +329,6 @@ void compile(FILE *input, FILE *output) {
             cur_node = new_node(unit->data, cur_addr);
             append_node(addr_list, cur_node);
             printf("Declare(0x%08lx) -> %s\n", cur_node->addr, cur_node->label);
-            printf("%d", cur_node->next == NULL);
             fflush(stdout);
             break;
         case Normal:
@@ -353,13 +352,6 @@ void compile(FILE *input, FILE *output) {
         default:
             break;
         }
-    }
-    LOG_DEBUG("Declared Addrs: ", NULL);
-    cur_node = addr_list->head;
-    while (cur_node != NULL) {
-        printf("Declare(0x%08lx) -> %s\n", cur_node->addr, cur_node->label);
-        fflush(stdout);
-        cur_node = cur_node->next;
     }
     fseek(input, 0, SEEK_SET);
     eof_sig = 0;
