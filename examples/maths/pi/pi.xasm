@@ -1,0 +1,85 @@
+-- mod func
+[mod.stack]
+0xff
+[mod.addr] 0x00
+[mod.ret] 0x00
+[mod.num_1] 0x00 -- a, the result
+[mod.num_2] 0x00 -- b
+[mod.tmp_1] 0x00 -- a / b (Int)
+[mod.tmp_2] 0x00 -- a / b * b
+[mod.init.next] 0x00
+0xff
+
+[mod.init]
+mov @mod.addr @mod.func
+mov @mod.init.next @frac_put.init
+goto @mod.init.next
+
+[mod.func]
+copy @mod.tmp_1 @mod.num_1 -- @mod.tmp_1 = @mod.num_1
+xsub @mod.tmp_1 @mod.num_2 -- @mod.tmp_1 = (@mod.num_1 / @mod.num_2)(Int)
+copy @mod.tmp_2 @mod.tmp_1 -- @mod.tmp_2 = @mod.tmp_1
+xadd @mod.tmp_2 @mod.num_2 -- @mod.tmp_1 = @mod.tmp_1 * @mod.num_2  
+sub @mod.num_1 @mod.tmp_2 -- @mod.tmp_1 = @mod.num_1 - @mod.tmp_1
+goto @mod.ret
+
+-- frac print func
+[frac_put.stack]
+0xff
+[frac_put.addr] 0x00
+[frac_put.ret] 0x00
+[frac_put.nume] 0x00
+[frac_put.denom] 0x00
+[frac_put.tmp] 0x00 -- @frac_put.nume / @frac_put.denom (Int)
+[frac_put.dot] "."
+[frac_put.zero] 0x00
+[frac_put.one] 0x01
+[frac_put.ten] 0x0a
+[frac_put.put_ptr] 0x00
+[frac_put.loop_ptr] 0x00
+[frac_put.digit] 0x00
+[frac_put.init.next] 0x00
+0xff
+
+[frac_put.init]
+mov @frac_put.addr @frac_put.func
+mov @frac_put.init.next @main.init
+goto @frac_put.init.next
+
+[frac_put.func]
+    -- mod( @frac_put.nume, @frac_put.denom )
+    copy @mod.num_1 @frac_put.nume
+    copy @mod.num_2 @frac_put.denom
+    mov @mod.ret @frac_put.mod_1.ret -- @mod.ret = Addr(@frac_put.mod_1.ret)
+    goto @mod.addr
+    [frac_put.mod_1.ret]
+    -- save result
+    copy @frac_put.nume @mod.num_1
+    copy @frac_put.tmp @mod.tmp_1
+xadd @frac_put.nume @frac_put.ten -- @frac_put.tmp = @frac_put.tmp * 10
+mov @frac_put.put_ptr @frac_put.tmp
+putn @frac_put.put_ptr -- print Integer part
+mov @frac_put.put_ptr @frac_put.dot
+putc @frac_put.put_ptr -- print dot (`.`)
+    [frac_put.loop_print]
+    = @frac_put.digit @frac_put.zero @frac_put.ret -- if @frac_put.digit == 0 goto @frac_put.ret
+    sub @frac_put.digit @frac_put.one -- @frac_put.digit = @frac_put.digit - 1
+        -- mod( @frac_put.nume, @frac_put.denom )
+        copy @mod.num_1 @frac_put.nume
+        copy @mod.num_2 @frac_put.denom
+        mov @mod.ret @frac_put.mod_2.ret -- @mod.ret = Addr(@frac_put.mod_1.ret)
+        goto @mod.addr
+        [frac_put.mod_2.ret]
+        -- save result
+        copy @frac_put.nume @mod.num_1
+        copy @frac_put.tmp @mod.tmp_1
+    xadd @frac_put.nume @frac_put.ten -- @frac_put.tmp = @frac_put.tmp * 10
+    mov @frac_put.put_ptr @frac_put.tmp
+    putn @frac_put.put_ptr -- print A digit
+    mov @frac_put.loop_ptr @frac_put.loop_print
+    goto @frac_put.loop_ptr
+
+-- TODO: finish this
+[pi_calc.stack]
+0xff
+0xff

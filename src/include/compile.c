@@ -7,8 +7,7 @@
 #include <string.h>
 #include <unistd.h>
 
-CodeUnit read_string_unit(FILE *input, const char end) {
-    CodeUnit unit;
+void read_string_unit(FILE *input, const char end, CodeUnit *unit) {
     char *string = NULL;
     size_t string_len = 0;
     int cur_byte;
@@ -24,8 +23,8 @@ CodeUnit read_string_unit(FILE *input, const char end) {
             switch (cur_byte) {
             case EOF:
                 logger(DEBUG, "FileEOF");
-                unit.type = FileEOF;
-                return unit;
+                unit->type = FileEOF;
+                return;
             case 'n':
                 string[string_len - 1] = '\n';
                 break;
@@ -44,8 +43,8 @@ CodeUnit read_string_unit(FILE *input, const char end) {
             break;
         case EOF:
             logger(DEBUG, "FileEOF");
-            unit.type = FileEOF;
-            return unit;
+            unit->type = FileEOF;
+            return;
         default:
             break;
         }
@@ -54,15 +53,13 @@ CodeUnit read_string_unit(FILE *input, const char end) {
             break;
         }
     }
-    unit.data = string;
-    LOG_DEBUG("String: %s", unit.data);
-    unit.length = string_len;
-    unit.type = String;
-    return unit;
+    unit->data = string;
+    LOG_DEBUG("String: %s", unit->data);
+    unit->length = string_len;
+    return;
 }
 
-CodeUnit read_normal_unit(FILE *input) {
-    CodeUnit unit;
+void read_generic_unit(FILE *input, CodeUnit *unit) {
     char *unit_data = NULL;
     int cur_byte;
     int unit_len = 0;
@@ -74,8 +71,8 @@ CodeUnit read_normal_unit(FILE *input) {
         unit_data[unit_len - 1] = cur_byte;
         if (cur_byte == EOF && unit_len == 1) {
             logger(DEBUG, "FileEOF");
-            unit.type = FileEOF;
-            return unit;
+            unit->type = FileEOF;
+            return;
         }
         switch (cur_byte) {
         case ' ':
@@ -86,55 +83,72 @@ CodeUnit read_normal_unit(FILE *input) {
             unit_data[unit_len - 1] = '\0';
             is_continue = 0;
             break;
+        case ']':
+            if (unit->type == DeclareAddr) {
+                unit_data[unit_len - 1] = '\0';
+                is_continue = 0;
+            }
+            break;
         }
     }
-    unit.data = unit_data;
-    LOG_DEBUG("UnitData: %s", unit.data);
-    unit.length = unit_len;
-    unit.type = Normal;
-    return unit;
+    unit->data = unit_data;
+    LOG_DEBUG("UnitData: %s", unit->data);
+    unit->length = unit_len;
+    return;
 }
 
-CodeUnit get_unit_type(CodeUnit unit, int *buf, int *offset_ref) {
+CodeUnit *get_unit_type(CodeUnit *unit, int *buf, int *offset_ref) {
     switch (buf[0]) {
     case '"':
     case '\'':
         *offset_ref += 1; // Skip
-        unit.type = String;
+        unit->type = String;
         break;
     case '#':
         *offset_ref += 1; // Skip
-        unit.type = Comment;
+        unit->type = Comment;
         break;
     case '/':
-        if (buf[1] == '/') {
+        switch (buf[1]) {
+        case '/':
             *offset_ref += 2; // Skip
-            unit.type = Comment;
+            unit->type = Comment;
             break;
-        } else if (buf[1] == '*') {
+        case '*':
             *offset_ref += 2; // Skip
-            logger(DEBUG, "BlockComment Begin");
-            unit.type = BlockComment;
-        } else {
-            unit.type = Invalid;
+            unit->type = BlockComment;
+            break;
+        default:
+            unit->type = Invalid;
         }
         break;
     case '-':
-        if (buf[1] == '-') {
+        switch (buf[1]) {
+        case '-':
             *offset_ref += 2; // Skip
-            unit.type = Comment;
+            unit->type = Comment;
             break;
-        } else {
-            unit.type = Invalid;
+        default:
+            unit->type = Invalid;
+            break;
         }
+        break;
+    case '[':
+        *offset_ref += 1; // Skip
+        unit->type = DeclareAddr;
+        break;
+    case '@':
+        *offset_ref += 1; // Skip
+        unit->type = RefAddr;
+        break;
     default:
-        unit.type = Normal;
+        unit->type = Normal;
         break;
     }
     return unit;
 }
 
-CodeUnit skip_unit(CodeUnit unit, FILE *input) {
+void skip_unit(CodeUnit *unit, FILE *input) {
     int buf[1]; // For EOF support
     // The whole unit is invalid
     do {
@@ -144,7 +158,6 @@ CodeUnit skip_unit(CodeUnit unit, FILE *input) {
     if (buf[0] == EOF) {
         fseek(input, -1, SEEK_CUR);
     }
-    return unit;
 }
 
 int skip_whitespace(FILE *input) {
@@ -170,8 +183,8 @@ int buf_read(int *buf, const int BUFFER_SIZE, FILE *input) {
     return offset;
 }
 
-CodeUnit get_unit(FILE *input) {
-    CodeUnit unit;
+CodeUnit *get_unit(FILE *input) {
+    CodeUnit *unit = malloc(sizeof(CodeUnit));
     const int BUFFER_SIZE = 32;
     int buf[BUFFER_SIZE];
     int offset = 0;
@@ -182,7 +195,7 @@ CodeUnit get_unit(FILE *input) {
     buf[0] = skip_whitespace(input);
     if (buf[0] == EOF) {
         logger(DEBUG, "FileEOF");
-        unit.type = FileEOF;
+        unit->type = FileEOF;
         return unit;
     }
 
@@ -191,26 +204,23 @@ CodeUnit get_unit(FILE *input) {
 
     // Get the unit type
     *offset_ref = 0;
-    unit = get_unit_type(unit, buf, offset_ref);
+    get_unit_type(unit, buf, offset_ref);
     offset = *offset_ref;
     LOG_DEBUG("Offset: %d", offset);
     fseek(input, offset, SEEK_CUR);
     free(offset_ref);
 
     // Read the unit data, or skip this unit
-    switch (unit.type) {
+    switch (unit->type) {
     case FileEOF:
         break;
     case Invalid:
-        unit = skip_unit(unit, input);
+        skip_unit(unit, input);
         logger(DEBUG, "Invalid");
         break;
     case String:
         LOG_DEBUG("String buf[0]: %c", buf[0]);
-        unit = read_string_unit(input, buf[0]);
-        break;
-    case Normal:
-        unit = read_normal_unit(input);
+        read_string_unit(input, buf[0], unit);
         break;
     case Comment:
         LOG_DEBUG("Skipped comment", NULL);
@@ -224,6 +234,11 @@ CodeUnit get_unit(FILE *input) {
             buf_read(buf, BUFFER_SIZE, input);
             fseek(input, 1, SEEK_CUR);
         }
+    case Normal:
+    case DeclareAddr:
+    case RefAddr:
+        read_generic_unit(input, unit);
+        break;
     }
     return unit;
 }
@@ -242,14 +257,14 @@ static char encode_table[] = {
 
 const size_t CODE_KIND_CNT = 30;
 
-int compile_normal_unit(CodeUnit unit) {
+int compile_normal_unit(CodeUnit *unit) {
     unsigned int encode_res = 0xf0f0f;
-    if (sscanf(unit.data, "%x", &encode_res) == EOF) {
+    if (sscanf(unit->data, "%x", &encode_res) == EOF) {
         encode_res = 0xf0f0f;
     }
     for (size_t code_kind_idx = 0; code_kind_idx < CODE_KIND_CNT;
          ++code_kind_idx) {
-        if (str_eqi(unit.data, code_table[code_kind_idx])) {
+        if (str_eqi(unit->data, code_table[code_kind_idx])) {
             encode_res = encode_table[code_kind_idx];
         }
     }
@@ -257,13 +272,103 @@ int compile_normal_unit(CodeUnit unit) {
     return encode_res;
 }
 
+AddrNode *new_node(char *label, size_t addr) {
+    AddrNode *new_node = malloc(sizeof(AddrNode));
+    new_node->label = label;
+    new_node->addr = addr;
+    new_node->next = NULL;
+    return new_node;
+}
+
+void append_node(AddrList *addr_list, AddrNode *node) {
+    if (addr_list->head != NULL) {
+        node->next = addr_list->head;
+    }
+    addr_list->head = node;
+}
+
+AddrNode *find_addr(AddrList *addr_list, char *label) {
+    AddrNode *cur_node = addr_list->head;
+    while (cur_node != NULL) {
+        if (str_eq(cur_node->label, label)) {
+            return cur_node;
+        }
+        cur_node = cur_node->next;
+    }
+    return NULL;
+}
+
+char *addr_to_bytes(AddrNode *addr_node) {
+    char *addr_bytes = malloc(4 * sizeof(char));
+    size_t addr = addr_node->addr;
+    for (int i = 0; i < 4; i++) {
+        addr_bytes[4 - i - 1] = (addr >> (8 * i)) & 0xff;
+    }
+    return addr_bytes;
+}
+
 void compile(FILE *input, FILE *output) {
-    CodeUnit unit;
+    CodeUnit *unit = NULL;
     int tmp;
-    while (1) {
+    int eof_sig = 0;
+    AddrList *addr_list = malloc(sizeof(AddrList));
+    addr_list->head = NULL;
+    size_t cur_addr = 0;
+    AddrNode *cur_node = NULL;
+    char *addr_bytes;
+    // 1 Loop for append addrs to addr_list
+    LOG_DEBUG("Loop 1 Started", NULL);
+    while (!eof_sig) {
         unit = get_unit(input);
-        switch (unit.type) {
+        switch (unit->type) {
         case FileEOF:
+            eof_sig = 1;
+            free(unit);
+            break;
+        case DeclareAddr:
+            cur_node = new_node(unit->data, cur_addr);
+            append_node(addr_list, cur_node);
+            printf("Declare(0x%08lx) -> %s\n", cur_node->addr, cur_node->label);
+            printf("%d", cur_node->next == NULL);
+            fflush(stdout);
+            break;
+        case Normal:
+            cur_addr += 1;
+            free(unit->data);
+            free(unit);
+            break;
+        case String:
+            cur_addr += (unit->length - 1);
+            free(unit->data);
+            free(unit);
+            break;
+        case Invalid:
+            LOG_ERROR("Invalid code: %s", unit->data);
+            exit(3);
+        case RefAddr:
+            cur_addr += 4;
+            free(unit->data);
+            free(unit);
+            break;
+        default:
+            break;
+        }
+    }
+    LOG_DEBUG("Declared Addrs: ", NULL);
+    cur_node = addr_list->head;
+    while (cur_node != NULL) {
+        printf("Declare(0x%08lx) -> %s\n", cur_node->addr, cur_node->label);
+        fflush(stdout);
+        cur_node = cur_node->next;
+    }
+    fseek(input, 0, SEEK_SET);
+    eof_sig = 0;
+    LOG_DEBUG("Loop 2 Started", NULL);
+    while (!eof_sig) {
+        unit = get_unit(input);
+        switch (unit->type) {
+        case FileEOF:
+            eof_sig = 1;
             fflush(output);
             return;
         case Normal:
@@ -271,18 +376,32 @@ void compile(FILE *input, FILE *output) {
             if (tmp != 0xf0f0f)
                 fputc(tmp, output);
             else {
-                LOG_ERROR("Unknown code: %s", unit.data);
+                LOG_ERROR("Unknown code: %s", unit->data);
                 exit(3);
             }
-            free(unit.data);
+            free(unit->data);
+            free(unit);
             break;
         case String:
-            fputs(unit.data, output);
-            free(unit.data);
+            fputs(unit->data, output);
+            free(unit->data);
+            free(unit);
             break;
-        case Invalid:
-            LOG_ERROR("Invalid code: %s", unit.data);
-            exit(3);
+        case RefAddr:
+            cur_node = find_addr(addr_list, unit->data);
+            if (cur_node == NULL) {
+                LOG_ERROR("Unknown label: %s", unit->data);
+                exit(3);
+            }
+            cur_addr = cur_node->addr;
+            addr_bytes = addr_to_bytes(cur_node);
+            printf("Ref(%s) -> 0x%02x 0x%02x 0x%02x 0x%02x\n", unit->data,
+                   addr_bytes[0], addr_bytes[1], addr_bytes[2], addr_bytes[3]);
+            fflush(stdout);
+            fwrite(addr_bytes, 1, 4, output);
+            free(unit->data);
+            free(unit);
+            break;
         default:
             break;
         }

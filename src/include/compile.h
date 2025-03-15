@@ -8,7 +8,19 @@ enum CodeUnitType {
     Comment,
     BlockComment,
     Invalid,
+    DeclareAddr,
+    RefAddr,
 };
+
+typedef struct AddrNode {
+    size_t addr;
+    char *label;
+    struct AddrNode *next;
+} AddrNode;
+
+typedef struct AddrList {
+    AddrNode *head;
+} AddrList;
 
 typedef struct CodeUnit {
     enum CodeUnitType type;
@@ -16,12 +28,12 @@ typedef struct CodeUnit {
     char *data;
 } CodeUnit;
 
-CodeUnit get_unit(FILE *input);
+CodeUnit *get_unit(FILE *input);
 
 void compile(FILE *input, FILE *output);
 
-CodeUnit read_string_unit(FILE *input, const char end);
+void read_string_unit(FILE *input, const char end, CodeUnit *unit);
 
-CodeUnit read_normal_unit(FILE *input);
+void read_generic_unit(FILE *input, CodeUnit *unit);
 
-int compile_normal_unit(CodeUnit unit);
+int compile_normal_unit(CodeUnit *unit);

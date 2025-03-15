@@ -1,0 +1,44 @@
+-- mod(a,b) = a - ((a/b)(Int)*b)
+[mod.stack]
+0xff
+[mod.addr] 0x00
+[mod.ret] 0x00
+[mod.num_1] 0x00 -- a
+[mod.num_2] 0x00 -- b
+[mod.tmp_1] 0x00
+[mod.init.next] 0x00
+0xff
+
+[mod.init]
+mov @mod.addr @mod.func
+mov @mod.init.next @main.init
+goto @mod.init.next
+
+[mod.func]
+copy @mod.tmp_1 @mod.num_1 -- @mod.tmp_1 = @mod.num_1
+xsub @mod.tmp_1 @mod.num_2 -- @mod.tmp_1 = (@mod.num_1 / @mod.num_2)(Int)
+xadd @mod.tmp_1 @mod.num_2 -- @mod.tmp_1 = @mod.tmp_1 * @mod.num_2  
+sub @mod.num_1 @mod.tmp_1 -- @mod.tmp_1 = @mod.num_1 - @mod.tmp_1
+goto @mod.ret
+
+[main.stack]
+0xff
+[main.num_a] 0x00 -- a
+[main.num_b] 0x00 -- b
+[main.num_ptr] 0x00 -- for putn
+0xff
+
+[main.init]
+mov @main.num_a 0x00 0x00 0xff 0x0f
+mov @main.num_b 0x00 0x00 0x00 0x07
+
+[main.func]
+copy @mod.num_1 @main.num_a
+copy @mod.num_2 @main.num_b
+mov @mod.ret @main.mod_1.ret
+goto @mod.addr
+[main.mod_1.ret]
+mov @main.num_ptr @mod.num_1
+putn @main.num_ptr
+exit
+

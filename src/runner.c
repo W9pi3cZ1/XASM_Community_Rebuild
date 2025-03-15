@@ -11,15 +11,27 @@ void set_cpu_clock(char **argv) {
     LOG_INFO("Setting CPU clock to %zu", cpu_clock);
 }
 
+FILE *open_file(char *file_path, const char *modes) {
+    FILE *file = fopen(file_path, modes);
+    if (file == NULL) {
+        LOG_FATAL("Cannot open file `%s`", file_path);
+        exit(1);
+    } else {
+        LOG_INFO("Openned File `%s` ", file_path);
+    }
+    return file;
+}
+
 void enter_input(char **argv) {
     char *input_path = argv[0];
-    input_file = fopen(input_path, "r");
     LOG_INFO("Opening File `%s`", input_path);
-    if (input_file == NULL) {
-        LOG_FATAL("Cannot open input file `%s`", input_path);
-    } else {
-        LOG_INFO("Openned File `%s` ", input_path);
-    }
+    input_file = open_file(input_path, "r");
+}
+
+void enter_log_file(char **argv) {
+    char *log_path = argv[0];
+    LOG_INFO("Opening File `%s`", log_path);
+    log_file = open_file(log_path, "w");
 }
 
 void set_memory(char **argv) {
@@ -87,15 +99,27 @@ Option log_lvl_opt = {
     .usage = "<log_level>",
 };
 
-static Option *opts[] = {&input_opt, &help_opt, &clock_opt, &mem_opt,
-                         &log_lvl_opt};
+const char *log_file_aliases[] = {"-l", "--log-file"};
+
+Option log_file_opt = {
+    .alias_cnt = 2,
+    .aliases = log_file_aliases,
+    .argc = 1,
+    .callback = enter_log_file,
+    .name = "log-file",
+    .description = "Sets the log file",
+    .usage = "<log_file>",
+};
+
+static Option *opts[] = {&input_opt, &help_opt,    &clock_opt,
+                         &mem_opt,   &log_lvl_opt, &log_file_opt};
 
 Application app = {
     .name = "XASM Community Runner",
     .description = "A Runner for the XASM language",
     .usage = "[<options> ...]",
-    .version = "a0.0.4",
-    .opt_cnt = 5,
+    .version = "a0.0.5",
+    .opt_cnt = 6,
     .opts = opts,
 };
 

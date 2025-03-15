@@ -14,6 +14,8 @@ typedef enum LogLevel {
     DEBUG = 4,
 } LogLevel;
 
+static FILE *log_file = NULL;
+
 static enum LogLevel log_lvl = DEBUG;
 
 static void set_log_lvl(char **argv) { log_lvl = (enum LogLevel)atoi(argv[0]); }
@@ -23,32 +25,44 @@ static const char *logLevelNames[] = {
 };
 
 static int logger(enum LogLevel lvl, const char *fmt, ...) {
+    if (log_file == NULL) {
+        log_file = stderr;
+    }
     int res;
     if (log_lvl < lvl)
         return 0;
-    fprintf(stderr, "[%s] ", logLevelNames[lvl]);
+    fprintf(log_file, "[%s] ", logLevelNames[lvl]);
+    fflush(log_file);
     va_list args;
     va_start(args, fmt);
-    res = vfprintf(stderr, fmt, args);
+    res = vfprintf(log_file, fmt, args);
+    fflush(log_file);
     va_end(args);
-    fprintf(stderr, "\n");
+    fprintf(log_file, "\n");
+    fflush(log_file);
     return res;
 }
 
 static int logger_feat(int no_newline, int no_lvl_name, enum LogLevel lvl,
                        const char *fmt, ...) {
+    if (log_file == NULL) {
+        log_file = stderr;
+    }
     int res = 0;
     if (log_lvl < lvl)
         return 0;
     if (!no_lvl_name) {
-        fprintf(stderr, "[%s] ", logLevelNames[lvl]);
+        fprintf(log_file, "[%s] ", logLevelNames[lvl]);
+        fflush(log_file);
     }
     va_list args;
     va_start(args, fmt);
-    res = vfprintf(stderr, fmt, args);
+    res = vfprintf(log_file, fmt, args);
+    fflush(log_file);
     va_end(args);
     if (!no_newline) {
-        fprintf(stderr, "\n");
+        fprintf(log_file, "\n");
+        fflush(log_file);
     }
     return res;
 }

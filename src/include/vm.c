@@ -79,6 +79,7 @@ VirtMem *alloc_chunk(VirtMem *virt_mem, size_t addr) {
     chunk->start_addr = start_addr;
     chunk->end_addr = end_addr;
     chunk->mem = malloc(virt_mem->chunk_size * sizeof(int));
+    memset(chunk->mem, Void, virt_mem->chunk_size * sizeof(int));
     chunk->next_chunk = virt_mem->head;
     virt_mem->head = chunk;
     return virt_mem;
@@ -102,19 +103,15 @@ int *read_virtmem(VirtMem *virt_mem, size_t addr) {
 }
 
 void virtmem_cpy(VirtMem *virt_mem, int *dest, size_t src_addr, size_t n) {
-    LOG_DEBUG("Calling virtmem_cpy", NULL);
     MemChunk *chunk = get_chunk(virt_mem, src_addr);
     size_t chunk_offset = src_addr - chunk->start_addr;
     for (size_t idx = 0; idx < n; idx++) {
         // Overflow chunk
         if (idx + chunk_offset > chunk->end_addr - chunk->start_addr) {
-            LOG_DEBUG("Overflow chunk", NULL);
             chunk = get_chunk(virt_mem, chunk->end_addr + 1);
             // Recalculate chunk_offset
             chunk_offset = -idx;
         }
-        LOG_DEBUG("Copying (chunk[%02x])%02x to dest[%02x]", chunk_offset + idx,
-                  chunk->mem[chunk_offset + idx], idx);
         dest[idx] = chunk->mem[chunk_offset + idx];
     }
 };
@@ -124,7 +121,6 @@ size_t merge_addr(int *mem_ptr) {
     // LOG_DEBUG("Bytes[3]:%02x", mem_ptr[3]);
     size_t addr = (mem_ptr[0] << 24) + (mem_ptr[1] << 16) + (mem_ptr[2] << 8) +
                   mem_ptr[3];
-    LOG_DEBUG("Addr:%08x", addr);
     return addr;
 }
 
@@ -158,144 +154,141 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
     State state = Run;
     LOG_DEBUG("CPU Clock:%zu", cpu_clock);
     size_t microsec_per_cmd = cpu_clock == 0 ? 0 : 1000000 / cpu_clock;
-    int data[16];
-    int *mem_ref[16]; // Memory reference
-    size_t addr[4];
+    const size_t ADDR_BUF_SIZE = 4;
+    const size_t DATA_BUF_SIZE = ADDR_BUF_SIZE * 4 + 1; // 1 for cmd
+    int data[DATA_BUF_SIZE];
+    int *mem_ref[DATA_BUF_SIZE]; // Memory chunk data reference
+    size_t addr[ADDR_BUF_SIZE];
     size_t cmd_cnt = 0;
+    int is_jumped = 0;
     while (byte_idx < virt_mem->max_size && state != Halt) {
         ++cmd_cnt;
-        if (cmd_cnt % 100 == 0) {
-            log_mem(virt_mem, 0, src_size, DEBUG);
-            log_mem(virt_mem, 0xf000, 0xf100, DEBUG);
-        }
         if (cpu_clock != 0) {
             usleep(microsec_per_cmd);
         };
-        virtmem_cpy(virt_mem, data, byte_idx, 16);
-        for (int i = 0; i < 4; i++) {
+        memset(data, Void, DATA_BUF_SIZE * sizeof(int));
+        virtmem_cpy(virt_mem, data, byte_idx, DATA_BUF_SIZE);
+        logger_feat(1, 0, DEBUG, "Addrs: ");
+        for (int i = 0; i < ADDR_BUF_SIZE; i++) {
             addr[i] = merge_addr(&data[1 + i * 4]);
+            logger_feat(1, 1, DEBUG, "[%d]=0x%08x ", i, addr[i]);
         }
+        logger_feat(1, 1, DEBUG, "\n");
+        is_jumped = 0;
+        // Auto Deref
+        switch (data[0]) {
+        case Mov:
+        case Goto:
+        case Geta:
+        case Putc:
+        case Putn:
+        case Puth:
+        case Getc:
+        case Getn:
+        case Geth:
+        case BNot:
+            deref_addrs(virt_mem, addr, mem_ref, 1);
+            break;
+        case Add:
+        case Sub:
+        case XAdd:
+        case XSub:
+        case Not:
+        case Copy:
+        case Lm:
+        case Rm:
+        case BAnd:
+        case BOr:
+        case XOr:
+        case Shl:
+        case Shr:
+            deref_addrs(virt_mem, addr, mem_ref, 2);
+            break;
+        case And:
+        case Or:
+        case Gt:
+        case Lt:
+        case Eq:
+            deref_addrs(virt_mem, addr, mem_ref, 3);
+            break;
+        }
+
         switch (data[0]) {
         case Add:
             LOG_DEBUG("Add", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] += *mem_ref[1];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Sub:
             LOG_DEBUG("Sub", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] -= *mem_ref[1];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
-            byte_idx += ADDR_SIZE * 2;
             break;
         case XAdd:
             LOG_DEBUG("XAdd", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] *= *mem_ref[1];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
-            byte_idx += ADDR_SIZE * 2;
             break;
         case XSub:
             LOG_DEBUG("XSub", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] /= *mem_ref[1];
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
-            byte_idx += ADDR_SIZE * 2;
             break;
         case And:
             LOG_DEBUG("And", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 3);
             *mem_ref[2] = *mem_ref[0] && *mem_ref[1];
-            byte_idx += ADDR_SIZE * 3;
             break;
         case Or:
             LOG_DEBUG("Or", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 3);
             *mem_ref[2] = *mem_ref[0] || *mem_ref[1];
-            byte_idx += ADDR_SIZE * 3;
             break;
         case Not:
             LOG_DEBUG("Not", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[1] = !*mem_ref[0];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Mov:
             LOG_DEBUG("Mov", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             *mem_ref[0] = addr[1];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Copy:
             LOG_DEBUG("Copy", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] = *mem_ref[1];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Goto:
             LOG_DEBUG("Goto", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             byte_idx = *mem_ref[0];
             byte_idx--;
             break;
         case Geta:
             LOG_DEBUG("Geta", NULL);
-            byte_idx += ADDR_SIZE;
-            deref_addrs(virt_mem, addr, mem_ref, 1);
-            *mem_ref[0] = byte_idx + 1;
-            LOG_DEBUG("Mem[%08x]:%08x", addr[0], *mem_ref[0]);
+            *mem_ref[0] = byte_idx + ADDR_SIZE + 1;
             break;
         case Gt:
             LOG_DEBUG("Gt", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 3);
-            if (*mem_ref[0] > *mem_ref[1]) {
-                byte_idx = *mem_ref[2] - 1;
-                LOG_DEBUG("%08x > %08x = True", *mem_ref[0], *mem_ref[1]);
-            } else {
-                byte_idx += ADDR_SIZE * 3;
-            }
+            is_jumped = *mem_ref[0] > *mem_ref[1];
             break;
         case Lt:
             LOG_DEBUG("Lt", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 3);
-            if (*mem_ref[0] < *mem_ref[1]) {
-                byte_idx = *mem_ref[2] - 1;
-                LOG_DEBUG("%08x < %08x = True", *mem_ref[0], *mem_ref[1]);
-            } else {
-                byte_idx += ADDR_SIZE * 3;
-            }
+            is_jumped = *mem_ref[0] < *mem_ref[1];
             break;
         case Eq:
             LOG_DEBUG("Eq", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 3);
-            if (*mem_ref[0] == *mem_ref[1]) {
-                byte_idx = *mem_ref[2] - 1;
-                LOG_DEBUG("%08x == %08x = True", *mem_ref[0], *mem_ref[1]);
-            } else {
-                byte_idx += ADDR_SIZE * 3;
-            }
+            is_jumped = *mem_ref[0] == *mem_ref[1];
             break;
         case Lm:
             LOG_DEBUG("Lm", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             deref(virt_mem, *mem_ref[0] - *mem_ref[1], &mem_ref[2]);
             *mem_ref[2] = *mem_ref[0];
             *mem_ref[0] = Void;
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Rm:
             LOG_DEBUG("Rm", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             deref(virt_mem, *mem_ref[0] + *mem_ref[1], &mem_ref[2]);
             *mem_ref[2] = *mem_ref[0];
             *mem_ref[0] = Void;
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Exit:
             LOG_DEBUG("Halted", NULL);
             state = Halt;
+            logger_feat(1, 1, INFO, "\n");
+            LOG_INFO("Execute end.", NULL);
+            LOG_INFO("Executed %d commands", cmd_cnt);
             return;
             break;
         case Sto:
@@ -305,78 +298,54 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
             break;
         case Putc:
             LOG_DEBUG("Putc", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             deref(virt_mem, *mem_ref[0], &mem_ref[1]);
             putchar(*mem_ref[1]);
-            byte_idx += ADDR_SIZE;
             break;
         case Putn:
             LOG_DEBUG("Putn", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             deref(virt_mem, *mem_ref[0], &mem_ref[1]);
             printf("%d", *mem_ref[1]);
-            byte_idx += ADDR_SIZE;
             break;
         case Puth:
             LOG_DEBUG("Puth", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             deref(virt_mem, *mem_ref[0], &mem_ref[1]);
             printf("%x", *mem_ref[1]);
-            byte_idx += ADDR_SIZE;
             break;
         case Getc:
             LOG_DEBUG("Getc", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             *mem_ref[0] = getch();
-            byte_idx += ADDR_SIZE;
             break;
         case Getn:
             LOG_DEBUG("Getn", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             scanf("%d", mem_ref[0]);
-            byte_idx += ADDR_SIZE;
             break;
         case Geth:
             LOG_DEBUG("Geth", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             scanf("%x", mem_ref[0]);
-            byte_idx += ADDR_SIZE;
             break;
         case BAnd:
             LOG_DEBUG("BAnd", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] = *mem_ref[0] & *mem_ref[1];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case BOr:
             LOG_DEBUG("BOr", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] = *mem_ref[0] | *mem_ref[1];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case XOr:
             LOG_DEBUG("XOr", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] = *mem_ref[0] ^ *mem_ref[1];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case BNot:
             LOG_DEBUG("BNot", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 1);
             *mem_ref[0] = ~*mem_ref[0];
-            byte_idx += ADDR_SIZE;
             break;
         case Shl:
             LOG_DEBUG("Shl", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] <<= *mem_ref[1];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Shr:
             LOG_DEBUG("Shr", NULL);
-            deref_addrs(virt_mem, addr, mem_ref, 2);
             *mem_ref[0] >>= *mem_ref[1];
-            byte_idx += ADDR_SIZE * 2;
             break;
         case Void:
             LOG_WARN("Segfault", NULL);
@@ -384,6 +353,51 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
             return;
         default:
             LOG_FATAL("Unknown ByteCode `%02x`", data[0], NULL);
+            break;
+        }
+        // Auto move byte_idx
+        // Auto Deref
+        switch (data[0]) {
+        case Geta:
+        case Putc:
+        case Putn:
+        case Puth:
+        case Getc:
+        case Getn:
+        case Geth:
+        case BNot:
+            byte_idx += ADDR_SIZE * 1;
+            break;
+        case Add:
+        case Sub:
+        case XAdd:
+        case XSub:
+        case Not:
+        case Mov:
+        case Copy:
+        case Lm:
+        case Rm:
+        case BAnd:
+        case BOr:
+        case XOr:
+        case Shl:
+        case Shr:
+            byte_idx += ADDR_SIZE * 2;
+            break;
+        case And:
+        case Or:
+            byte_idx += ADDR_SIZE * 3;
+            break;
+        case Gt:
+        case Lt:
+        case Eq:
+            if (is_jumped) {
+                LOG_DEBUG("Jumped to 0x%08x", *mem_ref[2]);
+                byte_idx = *mem_ref[2];
+                byte_idx--;
+            } else {
+                byte_idx += ADDR_SIZE * 3;
+            }
             break;
         }
         fflush(stdout);

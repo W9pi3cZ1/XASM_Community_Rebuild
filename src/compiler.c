@@ -28,6 +28,12 @@ void enter_output(char **argv) {
     output_file = open_file(output_path, "w");
 }
 
+void enter_log_file(char **argv) {
+    char *log_path = argv[0];
+    LOG_INFO("Opening File `%s`", log_path);
+    log_file = open_file(log_path, "w");
+}
+
 const char *input_aliases[] = {"-i", "--input"};
 
 Option input_opt = {
@@ -76,14 +82,27 @@ Option log_lvl_opt = {
     .usage = "<log_level>",
 };
 
-static Option *opts[] = {&input_opt, &output_opt, &help_opt, &log_lvl_opt};
+const char *log_file_aliases[] = {"-l", "--log-file"};
+
+Option log_file_opt = {
+    .alias_cnt = 2,
+    .aliases = log_file_aliases,
+    .argc = 1,
+    .callback = enter_log_file,
+    .name = "log-file",
+    .description = "Sets the log file",
+    .usage = "<log_file>",
+};
+
+static Option *opts[] = {&input_opt, &output_opt, &help_opt, &log_lvl_opt,
+                         &log_file_opt};
 
 Application app = {
     .name = "XASM Community Compiler",
     .description = "A compiler for the XASM language",
     .usage = "[<options> ...]",
-    .version = "a0.0.4",
-    .opt_cnt = 4,
+    .version = "a0.0.5",
+    .opt_cnt = 5,
     .opts = opts,
 };
 

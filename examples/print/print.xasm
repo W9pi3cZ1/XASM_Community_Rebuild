@@ -1,0 +1,52 @@
+[PrintFuncStack]
+0xff
+[FuncFinishBack] 0x00 -- Unset, other functions will set this
+[CharPtr] 0x00 -- Unset, other functions will set this
+[EndChar] "\0"
+[LoopIncrement] 0x01
+[LoopStart] 0x00 -- Unset, [PrintFuncInit] will set this -- Address of [PrintLoop]
+[NextInit] 0x00 -- Unset, [PrintFuncInit] will set this
+0xff
+
+[PrintFuncInit]
+mov @LoopStart  @PrintFunc -- Set [LoopStart]
+mov @NextInit  @MainFuncInit -- Set [NextInit]
+goto @NextInit -- Goto [MainFuncInit]
+
+[PrintFunc]
+[PrintLoop]
+-- Set [InjectStrStartAddr] to value of [CharPtr]
+copy @InjectStrStartAddr  @CharPtr
+-- Compare *[CharPtr] and [EndChar] -- If equal, goto [FuncFinishBack]
+= @EndChar  0x00 0x00 0x00 [InjectStrStartAddr] 0x00  @FuncFinishBack
+-- Print [CharPtr]
+putc @CharPtr
+-- [CharPtr] = [CharPtr] + [LoopIncrement]
+add @CharPtr @LoopIncrement
+-- Goto [LoopStart]
+goto @LoopStart
+
+[MainFuncStack]
+0xff
+[HelloString]
+"Unset, [MainFuncInit] will set this -- A pointer to [HelloString]\n" "\0"
+[HSPtr] 0x00 -- Unset, [MainFuncInit] will set this -- A pointer to [HelloString]
+[FFBAddr] 0x00 -- Unset, [MainFunc] will set this -- Address of [FuncFinishBack]
+[CallPrintAddr] 0x00 -- Unset, [MainFuncInit] will set this -- Address of [PrintFunc]
+[AddrOffset] 0x1c
+0xff
+
+[MainFuncInit]
+mov @HSPtr  @HelloString -- Set [HSPtr]
+mov @CallPrintAddr  @PrintFunc -- Set [CallPrintAddr]
+
+[MainFunc]
+-- Enter Arguments to [PrintFuncStack]
+copy @CharPtr  @HSPtr -- Copy [HSPtr] to [CharPtr]
+-- Call [PrintFunc]
+geta @FFBAddr  -- Save Current address to [FFBAddr]
+add @FFBAddr  @AddrOffset -- [FFBAddr] = [FFBAddr] + [AddrOffset] -- Offset to [FuncFinishBack]
+copy @FuncFinishBack  @FFBAddr -- Copy [FFBAddr] to [FuncFinishBack] in [PrintFuncStack]
+goto @CallPrintAddr -- Call [PrintFunc]
+[CallEnd]
+exit

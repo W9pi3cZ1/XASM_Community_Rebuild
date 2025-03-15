@@ -1,0 +1,44 @@
+ -- Specifies that the `0xff00` to be `0xffff` is an imaginary virtual stack.
+-- Note: The stack is not prescribed by the interpreter because the memory is unlimited.
+--       It needs the user follow this.
+[print.stack]
+0xff
+[print.ret] 0x00 -- An address to return to after the function is done.
+[print.char_ptr] 0x00 -- A pointer to the current character.
+[print.end_char] "\0" -- A character to check the string is end.
+[print.increment] 0x01 -- A value to increment the character pointer by.
+[print.loop1.start] 0x00 -- A address to jump to if the character is not null.
+[print.init.next] 0x00 -- A address to jump to after the function.init is done.
+0xff
+
+[print.init] -- Initalize the stack
+mov @print.loop1.start @print.loop1
+mov @print.init.next @main.func
+goto @print.init.next
+
+
+[print.func]
+[print.loop1]
+copy @print.deref1.addr @print.char_ptr  -- Dereference the character pointer and copy the value to [print.deref1.addr]
+= @print.end_char  0x00 0x00 0x00 [print.deref1.addr] 0x00  @print.ret
+putc @print.char_ptr -- Print the character
+add @print.char_ptr @print.increment -- Increment the character pointer
+goto @print.loop1.start
+
+[main.stack]
+0xff
+[main.hello] "Hello World!\n" "\0"
+[main.func_ptr] 0x00
+0xff
+
+[main.func]
+[main.print1.call]
+mov @print.char_ptr @main.hello
+mov @print.ret @main.print1.ret
+mov @main.func_ptr @print.func
+goto @main.func_ptr
+[main.print1.ret]
+-- Input Buffer: 0xefff -> 0xffff Size: 0x1000 (4KB)
+exit
+
+
