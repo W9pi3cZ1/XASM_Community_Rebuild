@@ -1,0 +1,75 @@
+-- @XXX means the address of the following byte of [XXX]
+-- [XXX] usages 0 bytes, because it is a label
+-- 0x00 means a byte that is 0x00
+-- Input Buffer: 0xefff -> 0xffff Size: 0x1000 (4KB)
+[input.get_line.stack]
+0xff
+[input.get_line.ret] 0x00
+[input.get_line.cur_char] 0x00
+[input.get_line.buf_ptr] 0x00 -- Const
+[input.get_line.write_ptr] 0x00
+[input.get_line.len] 0x00
+[input.get_line.tmp] 0x00
+[input.get_line.increment] 0x01 -- Const
+[input.get_line.func_ptr] 0x00 -- Temporary for calling function
+[input.get_line.loop_addr] 0x00 -- Temporary for loop
+[input.get_line.init.next] 0x00
+[input.get_line.display_ptr] 0x00
+[input.get_line.sub_func.process_char.ret] 0x00
+0xff
+
+[input.get_line.init]
+-- Set buf_ptr to 0xefff
+mov @input.get_line.buf_ptr 0x00 0x00 0xef 0xff
+mov @input.get_line.init.next @main.func
+goto @input.get_line.init.next
+
+
+[input.get_line.sub_func.process_char]
+-- 1. Mapping char to valid char [TODO]
+
+-- 2. Display char
+mov @input.get_line.display_ptr @input.get_line.cur_char
+putc @input.get_line.display_ptr
+-- 3. Add to buffer
+copy @input.get_line.addr_of.write_ptr_2 @input.get_line.write_ptr
+copy 0x00 0x00 0x00 [input.get_line.addr_of.write_ptr_2] 0x00
+    @input.get_line.cur_char
+-- 4. Increment write_ptr
+add @input.get_line.write_ptr @input.get_line.increment
+-- 5. Increment len
+add @input.get_line.len @input.get_line.increment
+goto @input.get_line.sub_func.process_char.ret
+
+[input.get_line.func]
+-- 1. Set write_ptr to buf_ptr (Reset write_ptr) [Value Copy]
+copy @input.get_line.write_ptr @input.get_line.buf_ptr
+-- 2. Set len to 0
+mov @input.get_line.len 0x00 0x00 0x00 0x00
+[input.get_line.func.loop]
+-- 1. Set the value of write_ptr to 0x00
+copy @input.get_line.addr_of.write_ptr_1 @input.get_line.write_ptr
+mov 0x00 0x00 0x00 [input.get_line.addr_of.write_ptr_1] 0x00
+    0x00 0x00 0x00 0x00
+-- 2. Get a char to cur_char
+getc @input.get_line.cur_char
+-- 3. Processing that char, call sub_func
+mov @input.get_line.sub_func.process_char.ret @input.get_line.process_char_ret_1
+mov @input.get_line.func_ptr @input.get_line.sub_func.process_char
+goto @input.get_line.func_ptr
+[input.get_line.process_char_ret_1]
+mov @input.get_line.loop_addr @input.get_line.func.loop
+goto @input.get_line.loop_addr
+
+[main.stack]
+0xff
+[main.func_ptr] 0x00 -- Temporary for calling function
+0xff
+
+[main.func]
+-- 1. Call get_line function
+mov @input.get_line.ret @main.get_line.ret
+mov @main.func_ptr @input.get_line.func
+goto @main.func_ptr
+[main.get_line.ret]
+exit

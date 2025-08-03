@@ -104,7 +104,7 @@ mov @pi_calc.init.next @main.init
 goto @pi_calc.init.next
 
 [pi_calc.func]
-mov @pi_calc.denom 0x02 0x03 0x04 0x05
+mov @pi_calc.denom 0x04 0x05 0x06 0x07
 mov @pi_calc.iter.count 0x00 0x00 0x00 0x00
     [pi_calc.loop_iter]
     -- Calculate Pi
@@ -124,14 +124,14 @@ mov @pi_calc.iter.count 0x00 0x00 0x00 0x00
     copy @pi_calc.tmp.sign @pi_calc.zero -- @pi_calc.tmp.sign = @pi_calc.zero
     mov @pi_calc.zero 0x00 0x00 0x00 0x00 -- Reset @pi_calc.zero
     -- Print Pi
-    copy @frac_put.nume @pi_calc.cur_pi.nume
+    /* copy @frac_put.nume @pi_calc.cur_pi.nume
     copy @frac_put.denom @pi_calc.denom
     mov @frac_put.digit 0x00 0x00 0x00 0x0f
     mov @frac_put.ret @pi_calc_1.debug.put_frac_1.ret
     goto @frac_put.addr
     [pi_calc_1.debug.put_frac_1.ret]
     mov @pi_calc.tmp_ptr @pi_calc.debug.newline
-    putc @pi_calc.tmp_ptr
+    putc @pi_calc.tmp_ptr */
     -- Judge break condition
     add @pi_calc.iter.count @pi_calc.one
     = @pi_calc.iter.count @pi_calc.iter.max @pi_calc.ret
@@ -145,7 +145,7 @@ mov @pi_calc.iter.count 0x00 0x00 0x00 0x00
 0xff
     
 [main.init]
-mov @main.num 0x00 0x10 0x00 0x00
+mov @main.num 0x00 0x50 0x00 0x00
 
 [main.func]
 copy @pi_calc.iter.max @main.num

@@ -1,37 +1,37 @@
-#include "./include/argparse.c"
-#include "./include/compile.c"
+#include "argparse.h"
+#include "compile.h"
 #include <stdlib.h>
 
 FILE *input_file;
 FILE *output_file;
 
 FILE *open_file(char *file_path, const char *modes) {
-    FILE *file = fopen(file_path, modes);
-    if (file == NULL) {
-        LOG_FATAL("Cannot open file `%s`", file_path);
-        exit(1);
-    } else {
-        LOG_INFO("Openned File `%s` ", file_path);
-    }
-    return file;
+  FILE *file = fopen(file_path, modes);
+  if (file == NULL) {
+    LOG_FATAL("Cannot open file `%s`", file_path);
+    exit(1);
+  } else {
+    LOG_INFO("Openned File `%s` ", file_path);
+  }
+  return file;
 }
 
 void enter_input(char **argv) {
-    char *input_path = argv[0];
-    LOG_INFO("Opening File `%s`", input_path);
-    input_file = open_file(input_path, "r");
+  char *input_path = argv[0];
+  LOG_INFO("Opening File `%s`", input_path);
+  input_file = open_file(input_path, "r");
 }
 
 void enter_output(char **argv) {
-    char *output_path = argv[0];
-    LOG_INFO("Opening File `%s`", output_path);
-    output_file = open_file(output_path, "w");
+  char *output_path = argv[0];
+  LOG_INFO("Opening File `%s`", output_path);
+  output_file = open_file(output_path, "w");
 }
 
 void enter_log_file(char **argv) {
-    char *log_path = argv[0];
-    LOG_INFO("Opening File `%s`", log_path);
-    log_file = open_file(log_path, "w");
+  char *log_path = argv[0];
+  LOG_INFO("Opening File `%s`", log_path);
+  log_file = open_file(log_path, "w");
 }
 
 const char *input_aliases[] = {"-i", "--input"};
@@ -106,27 +106,30 @@ Application app = {
     .opts = opts,
 };
 
-void print_help(char **argv) { show_app_help(&app); }
+void print_help(char **argv) {
+  (void)argv;
+  show_app_help(&app);
+}
 
 Application init_app(int argc, char **argv) {
-    app.argc = argc;
-    app.argv = argv;
-    help_opt.callback = print_help;
-    return app;
+  app.argc = argc;
+  app.argv = argv;
+  help_opt.callback = print_help;
+  return app;
 }
 
 int main(int argc, char **argv) {
-    Application compiler = init_app(argc, argv);
-    parse_args(&compiler);
-    if (input_file == NULL) {
-        LOG_ERROR("Input file was not entered.", NULL);
-        exit(1);
-    }
-    if (output_file == NULL) {
-        LOG_WARN("Output file was not entered, using default file `out.bin`.",
-                 NULL);
-        output_file = open_file("out.bin", "w");
-    }
-    compile(input_file, output_file);
-    return 0;
+  Application compiler = init_app(argc, argv);
+  parse_args(&compiler);
+  if (input_file == NULL) {
+    LOG_ERROR("Input file was not entered.", NULL);
+    exit(1);
+  }
+  if (output_file == NULL) {
+    LOG_WARN("Output file was not entered, using default file `out.bin`.",
+             NULL);
+    output_file = open_file("out.bin", "w");
+  }
+  compile(input_file, output_file);
+  return 0;
 }

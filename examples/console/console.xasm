@@ -13,7 +13,7 @@
 
 [print.init] -- Initalize the stack
 mov @print.loop1.start @print.loop1
-mov @print.init.next @main.func
+mov @print.init.next @print_prefix.init
 goto @print.init.next
 
 
@@ -25,20 +25,48 @@ putc @print.char_ptr -- Print the character
 add @print.char_ptr @print.increment -- Increment the character pointer
 goto @print.loop1.start
 
+[print_prefix.stack]
+0xff
+[print_prefix.ret] 0x00
+[print_prefix.prefix] "Console> \0"
+[print_prefix.func_ptr] 0x00
+[print_prefix.init.next] 0x00
+0xff
+
+[print_prefix.init]
+mov @print_prefix.init.next @main.func
+goto @print_prefix.init.next
+
+[print_prefix.func]
+[print_prefix.print_1.call]
+mov @print.char_ptr @print_prefix.prefix
+mov @print.ret @print_prefix.print_1.ret
+mov @print_prefix.func_ptr @print.func
+goto @print_prefix.func_ptr
+[print_prefix.print_1.ret]
+goto @print_prefix.ret
+
+
+
 [main.stack]
 0xff
-[main.hello] "Hello World!\n" "\0"
+[main.hello] "Hello World!\n\0"
 [main.func_ptr] 0x00
 0xff
 
 [main.func]
-[main.print1.call]
+[main.print_1.call]
 mov @print.char_ptr @main.hello
-mov @print.ret @main.print1.ret
+mov @print.ret @main.print_1.ret
 mov @main.func_ptr @print.func
 goto @main.func_ptr
-[main.print1.ret]
--- Input Buffer: 0xefff -> 0xffff Size: 0x1000 (4KB)
+[main.print_1.ret]
+
+[main.print_prefix_1.call]
+mov @print_prefix.ret @main.print_prefix_1.ret
+mov @main.func_ptr @print_prefix.func
+goto @main.func_ptr
+[main.print_prefix_1.ret]
 exit
 
 

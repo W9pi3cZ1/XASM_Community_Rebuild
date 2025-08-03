@@ -1,0 +1,123 @@
+-- Uncompleted
+-- [command] [dest] [src]
+-- 
+-- Heap Memory Structure
+-- [size] [raw_data]
+-- 
+-- When allocate, will return the addr of [raw_data]
+-- If need to know the size of the allocated memory,
+-- just read the addr of [raw_data] - 1
+-- 
+-- How to deref?
+-- 
+-- mov [addr] [4 bytes raw_data]
+--
+-- (@ptr and @ptr_val will be expanded to 4 bytes addr)
+-- mov @ptr_val @ptr (This change the value of @ptr_val to addr of @ptr,
+--                    the cmd argument)
+-- [cmd] @var 0x00 0x00 0x00 [ptr_val] 0x00 (The second argument is addr of @ptr) 
+--
+
+[global.stack]
+0xff -- 0xff will be skipped, but still compiled
+[global.heap.heap_ptr] 0x00
+[global.init.next] 0x00
+0xff
+[global.init]
+-- Init heap_ptr to 0xff00
+mov @global.heap.heap_ptr 0x00 0x00 0xf0 0x00
+-- global.init -> malloc.init
+mov @global.init.next @malloc.init
+goto @global.init.next
+
+[malloc.stack]
+0xff
+[malloc.size] 0x00
+[malloc.addr] 0x00
+[malloc.ret] 0x00
+[malloc.one] 0x01
+[malloc.func.call] 0x00
+0xff
+
+[malloc.init]
+mov @malloc.func.call @malloc.func
+-- malloc.init -> memcpy.init
+mov @global.init.next @memcpy.init
+goto @global.init.next
+
+[malloc.func]
+copy @malloc.deref.size_addr @global.heap.heap_ptr
+copy 0x00 0x00 0x00 [malloc.deref.size_addr] 0x00
+    @malloc.size
+add @global.heap.heap_ptr @malloc.one
+copy @malloc.addr @global.heap.heap_ptr
+add @global.heap.heap_ptr @malloc.size
+goto @malloc.ret
+
+[memcpy.stack]
+0xff
+[memcpy.src] 0x00
+[memcpy.dst] 0x00
+[memcpy.size] 0x00
+[memcpy.cpy_cnt] 0x00
+[memcpy.one] 0x01
+[memcpy.ret] 0x00
+[memcpy.func.call] 0x00
+[memcpy.loop_ptr] 0x00
+0xff
+
+[memcpy.init]
+mov @memcpy.func.call @memcpy.func
+-- memcpy.init -> main.init
+mov @global.init.next @main.init
+goto @global.init.next
+
+[memcpy.func]
+[memcpy.loop]
+= @memcpy.cpy_cnt @memcpy.size @memcpy.ret
+> @memcpy.cpy_cnt @memcpy.size @memcpy.ret
+copy @memcpy.deref_src @memcpy.src
+copy @memcpy.deref_dst @memcpy.dst
+copy 0x00 0x00 0x00 [memcpy.deref_dst] 0x00
+     0x00 0x00 0x00 [memcpy.deref_src] 0x00
+add @memcpy.cpy_cnt @memcpy.one
+add @memcpy.src @memcpy.one
+add @memcpy.dst @memcpy.one
+mov @memcpy.loop_ptr @memcpy.loop
+goto @memcpy.loop_ptr
+
+[main.stack]
+0xff
+[main.array.addr] 0x00
+[main.array1.addr] 0x00
+[main.func.call] 0x00
+[main.test] "Hello World!"
+0xff
+
+[main.init]
+mov @main.func.call @main.func
+copy @global.init.next @main.func.call
+goto @global.init.next
+
+[main.func]
+-- Calling malloc(128)
+mov @malloc.ret @main.malloc_128.ret
+mov @malloc.size 0x00 0x00 0x00 0x80
+goto @malloc.func.call
+[main.malloc_128.ret]
+copy @main.array.addr @malloc.addr
+-- Calling malloc(256)
+mov @malloc.ret @main.malloc_256.ret
+mov @malloc.size 0x00 0x00 0x01 0x00
+goto @malloc.func.call
+[main.malloc_256.ret]
+copy @main.array1.addr @malloc.addr
+-- Calling memcpy
+mov @memcpy.ret @main.memcpy.ret
+mov @memcpy.src @main.test
+copy @memcpy.dst @main.array1.addr
+mov @memcpy.cpy_cnt 0x00 0x00 0x00 0x00
+mov @memcpy.size 0x00 0x00 0x00 0x0c
+goto @memcpy.func.call
+[main.memcpy.ret]
+exit

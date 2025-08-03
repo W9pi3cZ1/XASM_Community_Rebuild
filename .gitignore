@@ -1,2 +1,5 @@
 /.vscode
 /build/*
+*.d
+*.o
+.cache

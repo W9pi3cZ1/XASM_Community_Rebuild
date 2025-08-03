@@ -2,30 +2,30 @@
 #include <stdio.h>
 
 enum CodeUnitType {
-    Normal,
-    String,
-    FileEOF,
-    Comment,
-    BlockComment,
-    Invalid,
-    DeclareAddr,
-    RefAddr,
+  Normal,
+  String,
+  FileEOF,
+  Comment,
+  BlockComment,
+  Invalid,
+  DeclareAddr,
+  RefAddr,
 };
 
 typedef struct AddrNode {
-    size_t addr;
-    char *label;
-    struct AddrNode *next;
+  size_t addr;
+  char *label;
+  struct AddrNode *next;
 } AddrNode;
 
 typedef struct AddrList {
-    AddrNode *head;
+  AddrNode *head;
 } AddrList;
 
 typedef struct CodeUnit {
-    enum CodeUnitType type;
-    size_t length;
-    char *data;
+  enum CodeUnitType type;
+  size_t length;
+  char *data;
 } CodeUnit;
 
 CodeUnit *get_unit(FILE *input);

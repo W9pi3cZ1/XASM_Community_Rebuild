@@ -1,42 +1,43 @@
-#include "./include/argparse.c"
-#include "./include/vm.c"
+#include "argparse.h"
+#include "vm.h"
 #include <stddef.h>
+#include <stdlib.h>
 
 FILE *input_file;
 size_t cpu_clock;
 size_t mem_size;
 
 void set_cpu_clock(char **argv) {
-    cpu_clock = atoi(argv[0]);
-    LOG_INFO("Setting CPU clock to %zu", cpu_clock);
+  cpu_clock = atoi(argv[0]);
+  LOG_INFO("Setting CPU clock to %zu", cpu_clock);
 }
 
 FILE *open_file(char *file_path, const char *modes) {
-    FILE *file = fopen(file_path, modes);
-    if (file == NULL) {
-        LOG_FATAL("Cannot open file `%s`", file_path);
-        exit(1);
-    } else {
-        LOG_INFO("Openned File `%s` ", file_path);
-    }
-    return file;
+  FILE *file = fopen(file_path, modes);
+  if (file == NULL) {
+    LOG_FATAL("Cannot open file `%s`", file_path);
+    exit(1);
+  } else {
+    LOG_INFO("Openned File `%s` ", file_path);
+  }
+  return file;
 }
 
 void enter_input(char **argv) {
-    char *input_path = argv[0];
-    LOG_INFO("Opening File `%s`", input_path);
-    input_file = open_file(input_path, "r");
+  char *input_path = argv[0];
+  LOG_INFO("Opening File `%s`", input_path);
+  input_file = open_file(input_path, "r");
 }
 
 void enter_log_file(char **argv) {
-    char *log_path = argv[0];
-    LOG_INFO("Opening File `%s`", log_path);
-    log_file = open_file(log_path, "w");
+  char *log_path = argv[0];
+  LOG_INFO("Opening File `%s`", log_path);
+  log_file = open_file(log_path, "w");
 }
 
 void set_memory(char **argv) {
-    mem_size = atol(argv[0]);
-    LOG_INFO("Setting memory size to %zu", mem_size);
+  mem_size = atol(argv[0]);
+  LOG_INFO("Setting memory size to %zu", mem_size);
 }
 
 const char *input_aliases[] = {"-i", "--input"};
@@ -123,27 +124,33 @@ Application app = {
     .opts = opts,
 };
 
-void print_help(char **argv) { show_app_help(&app); }
+void print_help(char **argv) {
+  (void)argv;
+  show_app_help(&app);
+}
 
 Application init_app(int argc, char **argv) {
-    app.argc = argc;
-    app.argv = argv;
-    help_opt.callback = print_help;
-    return app;
+  app.argc = argc;
+  app.argv = argv;
+  help_opt.callback = print_help;
+  return app;
 }
 
 int main(int argc, char **argv) {
-    Application runner = init_app(argc, argv);
-    parse_args(&runner);
-    if (input_file == NULL) {
-        LOG_FATAL("No input file provided", NULL);
-    } else {
-        LOG_INFO("Running VM", NULL);
-        if (mem_size == 0) {
-            mem_size = 0xffff;
-        }
-        VirtMem *virt_mem = init_virt_mem(mem_size);
-        run_file(virt_mem, input_file, cpu_clock);
+#if defined(__linux__) || defined(__APPLE__)
+  set_sig_handler();
+#endif
+  Application runner = init_app(argc, argv);
+  parse_args(&runner);
+  if (input_file == NULL) {
+    LOG_FATAL("No input file provided", NULL);
+  } else {
+    LOG_INFO("Running VM", NULL);
+    if (mem_size == 0) {
+      mem_size = 0xffff;
     }
-    return 0;
+    VirtMem *virt_mem = init_virt_mem(mem_size);
+    run_file(virt_mem, input_file, cpu_clock);
+  }
+  return 0;
 }

@@ -1,0 +1,34 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-Isrc/include",
+      "-c",
+      "-o",
+      "src/compiler.o",
+      "src/compiler.c"
+    ],
+    "directory": "/home/xslimenb/桌面/XASM_Community_Rebuild",
+    "file": "/home/xslimenb/桌面/XASM_Community_Rebuild/src/compiler.c",
+    "output": "/home/xslimenb/桌面/XASM_Community_Rebuild/src/compiler.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/cc",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-Isrc/include",
+      "-c",
+      "-o",
+      "src/runner.o",
+      "src/runner.c"
+    ],
+    "directory": "/home/xslimenb/桌面/XASM_Community_Rebuild",
+    "file": "/home/xslimenb/桌面/XASM_Community_Rebuild/src/runner.c",
+    "output": "/home/xslimenb/桌面/XASM_Community_Rebuild/src/runner.o"
+  }
+]
