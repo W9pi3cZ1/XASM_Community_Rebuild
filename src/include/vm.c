@@ -369,7 +369,6 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
     case Sub:
     case XAdd:
     case XSub:
-    case Not:
     case Copy:
     case Lm:
     case Rm:
@@ -382,6 +381,7 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
       break;
     case And:
     case Or:
+    case Not:
     case Gt:
     case Lt:
     case Eq:
@@ -417,7 +417,8 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
       break;
     case Not:
       LOG_DEBUG("Not", NULL);
-      *mem_ref[1] = !*mem_ref[0];
+      /* Original XASM1: dest = (a != b), three 4-byte operands. */
+      *mem_ref[2] = *mem_ref[0] != *mem_ref[1];
       break;
     case Mov:
       LOG_DEBUG("Mov", NULL);
@@ -452,13 +453,15 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
       break;
     case Lm:
       LOG_DEBUG("Lm", NULL);
-      deref(virt_mem, *mem_ref[0] - *mem_ref[1], &mem_ref[2]);
+      /* Original XASM1 uses the address of operand 1, not its value. */
+      deref(virt_mem, addr[0] - *mem_ref[1], &mem_ref[2]);
       *mem_ref[2] = *mem_ref[0];
       *mem_ref[0] = Void;
       break;
     case Rm:
       LOG_DEBUG("Rm", NULL);
-      deref(virt_mem, *mem_ref[0] + *mem_ref[1], &mem_ref[2]);
+      /* Original XASM1 uses the address of operand 1, not its value. */
+      deref(virt_mem, addr[0] + *mem_ref[1], &mem_ref[2]);
       *mem_ref[2] = *mem_ref[0];
       *mem_ref[0] = Void;
       break;
@@ -546,7 +549,6 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
     case Sub:
     case XAdd:
     case XSub:
-    case Not:
     case Mov:
     case Copy:
     case Lm:
@@ -560,6 +562,7 @@ void execute_code(VirtMem *virt_mem, size_t cpu_clock, size_t src_size) {
       break;
     case And:
     case Or:
+    case Not:
       byte_idx += ADDR_SIZE * 3;
       break;
     case Gt:
