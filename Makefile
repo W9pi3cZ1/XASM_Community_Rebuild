@@ -16,6 +16,8 @@ LIBS           := $(wildcard libs/lib*.a)
 PREFIX		 := build
 PWD            := $(shell pwd)
 
+$(shell mkdir -p $(PREFIX))
+
 CHECKS         := -quiet -checks=-*,clang-analyzer-*,bugprone-*,cert-*,misc-*,performance-*,portability-*,-misc-include-cleaner,-clang-analyzer-security.insecureAPI.*
 
 C_FLAGS        := -Wall -Wextra -O2 -Isrc/include -MMD
